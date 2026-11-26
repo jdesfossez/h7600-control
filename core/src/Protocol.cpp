@@ -162,6 +162,20 @@ Bytes makeBankChange(std::uint8_t deviceId, bool card, int bank)
                       nibblize({ static_cast<std::uint8_t>(card ? 1 : 0), static_cast<std::uint8_t>(bank) }));
 }
 
+Bytes makeProgramChange(int channel, int program)
+{
+    if (channel < 0 || channel > 15 || program < 0 || program > 127)
+        throw std::out_of_range("channel 0..15, program 0..127");
+    return { static_cast<std::uint8_t>(0xC0 | channel), static_cast<std::uint8_t>(program) };
+}
+
+std::vector<Bytes> makeProgramSelect(std::uint8_t deviceId, int channel, int number)
+{
+    if (number < 0 || number > 9999)
+        throw std::out_of_range("program number must be 0..9999");
+    return { makeBankChange(deviceId, false, number / 100), makeProgramChange(channel, number % 100) };
+}
+
 std::optional<std::uint32_t> keyMask(const Frame& f)
 {
     if (f.code != static_cast<std::uint8_t>(Code::Keypress) || f.payload.size() != 8)

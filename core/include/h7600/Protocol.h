@@ -95,10 +95,19 @@ struct ParamChange
 };
 std::optional<ParamChange> parseParamSet(const Frame& f);
 
-/// Bank change: internal (or card) bank 0..99. On fw 5.22 a following MIDI
-/// Program Change is resolved through the active MIDI map (user group), not
-/// this bank.
+/// Bank change: internal (or card) bank 0..99. Selects the bank used by a
+/// following MIDI Program Change, but only when SETUP > MIDI > "MIDI map" is
+/// "none". With a map (default "Factory" = user group 1) the PC goes through
+/// the map and the bank is ignored.
 Bytes makeBankChange(std::uint8_t deviceId, bool card, int bank);
+
+/// Plain MIDI Program Change, channel 0..15 (H7600 receives on its MIDI channel).
+Bytes makeProgramChange(int channel, int program);
+
+/// Loads program `number` (bank*100 + slot, slot 0..99) at run time:
+/// SysEx bank change then MIDI Program Change. Requires "MIDI map" = none.
+/// Verified on fw 5.22: bank 42 + PC 10 loads 4210, bank 5 + PC 13 loads 513.
+std::vector<Bytes> makeProgramSelect(std::uint8_t deviceId, int channel, int number);
 
 // ---- Keypress echo ------------------------------------------------------------
 
@@ -109,8 +118,9 @@ std::vector<std::string> pressedKeys(std::uint32_t mask);
 
 // ---- Program load by number (key-press emulation) ----------------------------
 //
-// NOT YET VERIFIED ON HARDWARE. Mirrors what the unit echoes when a program is
-// loaded from the front panel: PROGRAM, digits, ENTER. Only navigation-safe keys
+// Prefer makeProgramSelect. Partly verified on fw 5.22: PROGRAM, digits, ENTER
+// moves the program-list cursor to the program but does not load it; one more
+// key (probably SELECT) is needed and is unconfirmed. Only navigation-safe keys
 // are exposed (PROGRAM, 0-9, ENTER, SELECT, CXL); keys that can reach setup,
 // save or delete screens (SETUP, soft keys, ...) have no builder.
 

@@ -34,17 +34,19 @@ Frame: `F0 1C 70 <device id> <code> <payload> F7` (device id 0 = broadcast; the 
   then `0001` (meaning of `0001` not yet known). Changes are run-time only (not saved).
 * With SETUP > MIDI > SEQUENCE OUT = `new`, the unit emits `3C` messages when knobs are turned
   and `01` keypress messages (active-low 32-bit key mask, as nibbles) for front-panel keys.
-* Bank change `03` + MIDI Program Change: the program change follows the active MIDI map
-  (user group), not the bank.
+* **Loading a program by number** (`makeProgramSelect`): SysEx bank change `03` (nibblized
+  `00 00 <bank>`) then MIDI Program Change `<slot>`, e.g. `F0 1C 70 01 03 00 00 02 0A F7` + `C0 0A`
+  loads 4210. Requires SETUP > MIDI > **MIDI map = none**; with a map (default "Factory" = user
+  group 1) the PC goes through the map and the bank is ignored.
 
 **Safety:** the core library has no builders for codes that write the unit's memory
 (`08`, `0A`, `0F`, `11`, `13`, `15`, `16`); `makeWant` rejects them. Key presses (`01`) can only
 be built for navigation-safe keys (`SafeKey`: PROGRAM, 0-9, ENTER, SELECT, CXL).
 
-**Loading a program by number** (`makeLoadProgram`, not yet verified on hardware): emulates
-PROGRAM, digits, ENTER, as echoed by the unit when loading from the front panel. Neither a bank
-change + Program Change (follows the MIDI map) nor replaying the panel's `3C 4005xxxx`
-messages (program-browser cursor + "load selection") loads a specific number.
+`makeLoadProgram` (key-press emulation) is a fallback for when a MIDI map is active: PROGRAM,
+digits, ENTER moves the list cursor to the program; the final load key is unconfirmed. Replaying
+the panel's `3C 4005xxxx` messages does not load a given number (they are list-cursor/"load
+selection" actions relative to the list on screen).
 
 ## Build (macOS)
 
@@ -73,7 +75,7 @@ Core + tests only (no JUCE download): `cmake -S . -B build-tests -DH7600_BUILD_P
 ## Unit setup
 
 On the H7600, SETUP > MIDI: MIDI enabled, SYSTEM EXCLUSIVE on, note the DEVICE ID.
-Set SEQUENCE OUT to `new` for two-way knob updates.
+Set SEQUENCE OUT to `new` for two-way knob updates, and MIDI map to `none` to load programs by number.
 
 ## Regenerating the preset catalog
 

@@ -140,3 +140,17 @@ TEST_CASE("makeLoadProgram: PROGRAM, digits, ENTER, each pressed then released")
     CHECK_THROWS(makeLoadProgram(1, 0));
     CHECK_THROWS(makeLoadProgram(1, 10000));
 }
+
+TEST_CASE("makeProgramSelect: bank change + program change (verified with MIDI map = none)")
+{
+    auto ambience = makeProgramSelect(1, 0, 4210);
+    REQUIRE(ambience.size() == 2);
+    CHECK(ambience[0] == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x03, 0x00, 0x00, 0x02, 0x0A, 0xF7 });
+    CHECK(ambience[1] == Bytes{ 0xC0, 0x0A });
+    auto ducked = makeProgramSelect(1, 0, 513);
+    CHECK(ducked[0] == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x03, 0x00, 0x00, 0x00, 0x05, 0xF7 });
+    CHECK(ducked[1] == Bytes{ 0xC0, 0x0D });
+    CHECK(makeProgramSelect(1, 2, 13)[1] == Bytes{ 0xC2, 0x0D });
+    CHECK_THROWS(makeProgramSelect(1, 0, 10000));
+    CHECK_THROWS(makeProgramChange(16, 0));
+}
