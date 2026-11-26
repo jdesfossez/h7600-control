@@ -95,3 +95,9 @@ Set SEQUENCE OUT to `new` for two-way knob updates, and MIDI map to `none` to lo
 pdftotext -layout H7600V522PresetsManual.pdf presets.txt
 python3 tools/parse_presets.py presets.txt resources/presets.json   # prints "75 banks, 1114 presets"
 ```
+
+## Third-party assets
+
+* `resources/fonts/VT323-Regular.ttf`: VT323 by The VT323 Project Authors, from
+  [google/fonts](https://github.com/google/fonts/tree/main/ofl/vt323), licensed under the
+  SIL Open Font License 1.1 (`resources/fonts/OFL.txt`). Used for the LCD-style text.

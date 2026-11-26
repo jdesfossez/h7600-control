@@ -14,7 +14,9 @@ juce_add_plugin(H7600Control
     AU_MAIN_TYPE kAudioUnitType_Effect
     VST3_CATEGORIES Fx Tools)
 
-juce_add_binary_data(H7600Data SOURCES ${PROJECT_SOURCE_DIR}/resources/presets.json)
+juce_add_binary_data(H7600Data SOURCES
+    ${PROJECT_SOURCE_DIR}/resources/presets.json
+    ${PROJECT_SOURCE_DIR}/resources/fonts/VT323-Regular.ttf)
 set_target_properties(H7600Data PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_sources(H7600Control PRIVATE

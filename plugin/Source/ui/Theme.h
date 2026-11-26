@@ -1,6 +1,8 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <BinaryData.h>
+
 // Colours and fonts of the approved prototype (dark H7600 panel look).
 namespace theme
 {
@@ -25,11 +27,16 @@ inline juce::FontOptions ui(float size = 15.0f, bool bold = false)
     return juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain);
 }
 
-/// LCD text. TODO: bundle the VT323 pixel font (OFL) once approved; a system
-/// monospaced font stands in for now.
+/// LCD text in VT323 (SIL OFL 1.1, resources/fonts/OFL.txt), embedded as
+/// binary data. VT323 draws small for its nominal size, so sizes are scaled to
+/// match the prototype's proportions.
 inline juce::FontOptions lcdFont(float size)
 {
-    return juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::plain);
+    static const juce::Typeface::Ptr vt323 =
+        juce::Typeface::createSystemTypefaceFor(BinaryData::VT323Regular_ttf, BinaryData::VT323Regular_ttfSize);
+    if (vt323 == nullptr)
+        return juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::plain);
+    return juce::FontOptions(vt323).withHeight(size * 1.3f);
 }
 
 class LookAndFeel : public juce::LookAndFeel_V4
