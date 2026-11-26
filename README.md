@@ -4,8 +4,20 @@ An AU / VST3 / Standalone remote control for the **Eventide H7600** (firmware 5.
 The plugin does no audio processing (audio passes through untouched). It opens the
 MIDI interface wired to the H7600 itself, because hosts are unreliable at passing large SysEx.
 
-Status: scaffold. The core protocol library is tested against real replies captured from a unit;
-the UI is a placeholder that connects, requests the current program's sigfile and lists its knobs.
+Features (all run time only; nothing is ever saved to the unit):
+
+* **Browse**: the 1114 factory presets by bank family, instant ranked search with typo tolerance,
+  effect/source filters with live counts, LCD-style details, favorites, your own tags and recents
+  (stored on the Mac), Enter or Load to load the preset on the unit (confirmed by reading it back).
+* **Parameters**: controls built from the loaded program (its own menu pages, ranges and value
+  formats); moves are sent live, coalesced and acknowledged; front-panel changes move the controls.
+* **LCD**: a live mirror of the unit's screen.
+* Follows program changes made on the front panel, survives the unit power-cycling and the MIDI
+  interface being unplugged.
+
+Developer tool: `build/plugin/H7600Snapshot_artefacts/Release/H7600Snapshot <dir>` renders the
+editor to PNGs; `--live <number>...` loads programs on the unit through the browser path, and
+`--param <knob> <value>` moves a control through the UI path and reads the value back.
 
 ## Layout
 

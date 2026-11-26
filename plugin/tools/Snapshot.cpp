@@ -41,6 +41,9 @@ static int live(const juce::File& dir, juce::StringArray numbers)
     editor->showPageForTools(1);
     pump(300);
     save(*ed, dir.getChildFile("live_params.png"));
+    editor->showPageForTools(2);
+    pump(4000);
+    save(*ed, dir.getChildFile("live_lcd.png"));
     return 0;
 }
 

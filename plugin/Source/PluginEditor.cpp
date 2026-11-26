@@ -28,7 +28,7 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     channelBox.onChange = [this] { owner.getLink().setMidiChannel(channelBox.getSelectedId() - 1); };
     addAndMakeVisible(channelBox);
 
-    for (auto* t : { &browseTab, &paramsTab })
+    for (auto* t : { &browseTab, &paramsTab, &lcdTab })
     {
         t->setClickingTogglesState(false);
         t->setWantsKeyboardFocus(false);
@@ -36,6 +36,9 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     }
     browseTab.onClick = [this] { showPage(0); };
     paramsTab.onClick = [this] { showPage(1); };
+    lcdTab.onClick = [this] { showPage(2); };
+    lcdMirror.requestScreen = [this] { return owner.getLink().requestScreen(); };
+    addChildComponent(lcdMirror);
 
     browser.onLoad = [this](int number)
     {
@@ -52,6 +55,7 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     link.onSigfile = [this](const h7600::Sigfile& sf) { showSigfile(sf); };
     link.onParamChange = [this](const h7600::ParamChange& c) { params.applyFromUnit(c); };
     link.onConnectionChanged = [this] { connectionChanged(); };
+    link.onScreen = [this](const h7600::ScreenDump& d) { lcdMirror.show(d); };
 
     refreshDevices();
     if (! link.isOpen() && ! juce::SystemStats::getEnvironmentVariable("H7600_NO_AUTOCONNECT", {}).isNotEmpty())
@@ -78,6 +82,7 @@ H7600ControlEditor::~H7600ControlEditor()
     link.onParamChange = nullptr;
     link.onKeys = nullptr;
     link.onConnectionChanged = nullptr;
+    link.onScreen = nullptr;
     setLookAndFeel(nullptr);
 }
 
@@ -85,6 +90,8 @@ void H7600ControlEditor::showPage(int page)
 {
     browser.setVisible(page == 0);
     params.setVisible(page == 1);
+    lcdMirror.setVisible(page == 2);
+    lcdTab.setToggleState(page == 2, juce::dontSendNotification);
     browseTab.setToggleState(page == 0, juce::dontSendNotification);
     paramsTab.setToggleState(page == 1, juce::dontSendNotification);
     if (page == 0) browser.focusSearch();
@@ -149,7 +156,7 @@ void H7600ControlEditor::paint(juce::Graphics& g)
     g.drawText("H7600", header.removeFromLeft(80), juce::Justification::centredLeft);
     g.setColour(theme::mute);
     g.setFont(theme::ui(15.0f));
-    auto sub = header.removeFromLeft(380);
+    auto sub = header.removeFromLeft(300);
     g.drawText(programName.isEmpty() ? juce::String("Control") : juce::String(juce::CharPointer_UTF8("Control  \xc2\xb7  ")) + programName, sub, juce::Justification::centredLeft);
 
     const bool on = owner.getLink().isOpen() && owner.getLink().isResponding();
@@ -171,8 +178,10 @@ void H7600ControlEditor::resized()
 {
     auto r = getLocalBounds().reduced(16, 0);
     auto header = r.removeFromTop(64);
-    header.removeFromLeft(80 + 380);
+    header.removeFromLeft(80 + 300);
     auto right = header.withSizeKeepingCentre(header.getWidth(), 32);
+    lcdTab.setBounds(right.removeFromRight(70));
+    right.removeFromRight(6);
     paramsTab.setBounds(right.removeFromRight(110));
     right.removeFromRight(6);
     browseTab.setBounds(right.removeFromRight(90));
@@ -188,4 +197,5 @@ void H7600ControlEditor::resized()
     r.removeFromBottom(16);
     browser.setBounds(r);
     params.setBounds(r);
+    lcdMirror.setBounds(r);
 }

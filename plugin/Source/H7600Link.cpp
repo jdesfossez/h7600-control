@@ -67,6 +67,7 @@ void H7600Link::close()
     tracker.clear();
     sender.clear();
     sigfilePending = false;
+    screenPending = false;
     responding = false;
 }
 
@@ -117,6 +118,23 @@ void H7600Link::requestSigfile()
             if (onConnectionChanged) onConnectionChanged();
         });
     send(h7600::makeWant(deviceId, h7600::Code::SigfileWantQuick));
+}
+
+bool H7600Link::requestScreen()
+{
+    if (! isOpen() || screenPending || sigfilePending || ! sender.idle())
+        return false;
+    screenPending = true;
+    tracker.expect(h7600::Code::ScreenWant, nowMs(), 5000,
+        [this](const h7600::Frame& f)
+        {
+            screenPending = false;
+            if (auto s = h7600::parseScreenDump(f))
+                if (onScreen) onScreen(*s);
+        },
+        [this](h7600::Code) { screenPending = false; });
+    send(h7600::makeWant(deviceId, h7600::Code::ScreenWant));
+    return true;
 }
 
 void H7600Link::setParameter(const h7600::Knob& knob, double value)

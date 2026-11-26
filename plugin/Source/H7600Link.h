@@ -14,6 +14,7 @@
 #include "h7600/ParamSender.h"
 #include "h7600/Protocol.h"
 #include "h7600/RequestTracker.h"
+#include "h7600/ScreenDump.h"
 #include "h7600/Sigfile.h"
 
 class H7600Link : private juce::MidiInputCallback, private juce::Timer
@@ -43,6 +44,10 @@ public:
 
     /// Read-only: asks for the current program's quick sigfile.
     void requestSigfile();
+    /// Read-only: asks for the LCD bitmap. Skipped while parameter changes are
+    /// queued (a dump takes ~1.3 s of MIDI bandwidth). Returns false if skipped.
+    bool requestScreen();
+
     /// Run-time parameter change (not saved on the unit). Coalesced.
     void setParameter(const h7600::Knob& knob, double value);
 
@@ -53,6 +58,7 @@ public:
     std::function<void(const h7600::ParamChange&)> onParamChange;
     std::function<void(const juce::StringArray&)> onKeys;
     std::function<void()> onConnectionChanged;
+    std::function<void(const h7600::ScreenDump&)> onScreen;
 
 private:
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage&) override;
@@ -72,6 +78,7 @@ private:
     h7600::RequestTracker tracker;
     h7600::ParamSender sender;
     bool sigfilePending = false;
+    bool screenPending = false;
     bool responding = false;
     std::int64_t refreshAt = 0;
     std::int64_t nextWatchdog = 0;
