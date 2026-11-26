@@ -11,6 +11,13 @@ option(H7600_BUILD_TESTS "Build unit tests (fetches Catch2)" ON)
 
 include(FetchContent)
 
+FetchContent_Declare(nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.12.0
+    GIT_SHALLOW ON)
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+FetchContent_MakeAvailable(nlohmann_json)
+
 add_subdirectory(core)
 
 if(H7600_BUILD_PLUGIN)
