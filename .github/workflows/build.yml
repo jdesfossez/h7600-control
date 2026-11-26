@@ -24,7 +24,7 @@ jobs:
             artefact: macOS
           - name: Windows (VST3, Standalone)
             os: windows-latest
-            generator: Visual Studio 17 2022
+            generator: ""   # the newest Visual Studio on the runner
             artefact: Windows
           - name: Linux (VST3, Standalone)
             os: ubuntu-24.04
@@ -32,7 +32,7 @@ jobs:
             artefact: Linux
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -54,8 +54,10 @@ jobs:
           key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
 
       - name: Configure
+        env:
+          CMAKE_GENERATOR: ${{ matrix.generator }}
         run: >
-          cmake -S . -B build -G "${{ matrix.generator }}"
+          cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
 

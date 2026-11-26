@@ -89,10 +89,11 @@ to the first command. With full Xcode you can also generate a project with `-G X
 
 ### Windows
 
-Visual Studio 2022 with the "Desktop development with C++" workload.
+Visual Studio 2022 or newer with the "Desktop development with C++" workload. CMake picks the
+newest Visual Studio it finds.
 
 ```bash
-cmake -S . -B build -G "Visual Studio 17 2022"
+cmake -S . -B build
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
