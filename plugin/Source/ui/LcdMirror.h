@@ -1,6 +1,12 @@
 #pragma once
-// Live mirror of the H7600's 240x64 LCD, from screen dumps (18 -> 17).
-// Polls only while visible; each dump costs ~1.3 s of MIDI bandwidth.
+// Mirror of the H7600's 240x64 LCD, from screen dumps (18 -> 17).
+//
+// Every dump makes the unit flash "sending screen bitmap", and the unit cannot
+// announce screen changes itself, so there is no polling: one dump is asked
+// when the tab opens, then once ~400 ms after the last event that can change
+// the screen (front-panel keys/knobs, our acknowledged parameter changes,
+// program reads), so a burst such as a knob being turned costs one dump.
+// A Refresh button asks for one on demand.
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -10,17 +16,40 @@
 class LcdMirror : public juce::Component, private juce::Timer
 {
 public:
-    /// Should return false if the request could not be sent now.
+    /// Should return false if the request could not be sent now (busy).
     std::function<bool()> requestScreen;
 
-    LcdMirror() { startTimer(250); }
+    LcdMirror()
+    {
+        refresh.setWantsKeyboardFocus(false);
+        refresh.onClick = [this] { due = juce::Time::getMillisecondCounter(); };
+        addAndMakeVisible(refresh);
+        startTimer(50);
+    }
+
+    /// Something may have changed on the unit's screen: refresh after it settles.
+    void noteActivity()
+    {
+        if (isShowing())
+            due = juce::Time::getMillisecondCounter() + settleMs;
+    }
 
     void show(const h7600::ScreenDump& s)
     {
         dump = s;
         hasDump = true;
-        lastUpdate = juce::Time::getMillisecondCounter();
         repaint();
+    }
+
+    void visibilityChanged() override
+    {
+        if (isVisible())
+            due = juce::Time::getMillisecondCounter(); // one dump when the tab opens
+    }
+
+    void resized() override
+    {
+        refresh.setBounds(getLocalBounds().reduced(24).removeFromTop(32).removeFromRight(120));
     }
 
     void paint(juce::Graphics& g) override
@@ -29,8 +58,8 @@ public:
         auto r = getLocalBounds().reduced(24);
         g.setColour(theme::mute);
         g.setFont(theme::ui(14.0f));
-        g.drawText("Live view of the H7600's screen. It refreshes about once a second and pauses while parameters are being sent.",
-                   r.removeFromTop(24), juce::Justification::centredLeft);
+        g.drawText("Mirror of the H7600's screen. It updates after you use the unit or change a parameter (each update briefly shows \"sending screen bitmap\" on the unit).",
+                   r.removeFromTop(32).withTrimmedRight(140), juce::Justification::centredLeft);
         r.removeFromTop(12);
         if (! hasDump)
         {
@@ -56,13 +85,14 @@ public:
 private:
     void timerCallback() override
     {
-        if (! isShowing() || ! requestScreen) return;
-        const auto now = juce::Time::getMillisecondCounter();
-        if (now - lastAsk > 1000 && requestScreen())
-            lastAsk = now;
+        if (due == 0 || ! isShowing() || ! requestScreen) return;
+        if (juce::Time::getMillisecondCounter() >= due && requestScreen())
+            due = 0; // if busy (param queue, other request), try again next tick
     }
 
+    static constexpr juce::uint32 settleMs = 400;
+    juce::TextButton refresh { "Refresh" };
     h7600::ScreenDump dump;
     bool hasDump = false;
-    juce::uint32 lastUpdate = 0, lastAsk = 0;
+    juce::uint32 due = 0;
 };

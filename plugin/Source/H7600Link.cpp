@@ -169,6 +169,12 @@ void H7600Link::handleFrame(const h7600::Frame& f)
         if (wasKnown && f.code != static_cast<std::uint8_t>(h7600::Code::SigfileDumpRemote))
             scheduleRefresh(500);
     }
+    const bool screenEvent = f.code == static_cast<std::uint8_t>(h7600::Code::Keypress)
+                          || f.code == static_cast<std::uint8_t>(h7600::Code::ParamSet)
+                          || f.code == static_cast<std::uint8_t>(h7600::Code::ParamAck)
+                          || f.code == static_cast<std::uint8_t>(h7600::Code::SigfileDumpRemote);
+    if (screenEvent && onScreenMayChange)
+        onScreenMayChange();
     if (sender.onFrame(f, nowMs()))
         return;
     if (tracker.onFrame(f))

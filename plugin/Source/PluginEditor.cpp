@@ -56,6 +56,7 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     link.onParamChange = [this](const h7600::ParamChange& c) { params.applyFromUnit(c); };
     link.onConnectionChanged = [this] { connectionChanged(); };
     link.onScreen = [this](const h7600::ScreenDump& d) { lcdMirror.show(d); };
+    link.onScreenMayChange = [this] { lcdMirror.noteActivity(); };
 
     refreshDevices();
     if (! link.isOpen() && ! juce::SystemStats::getEnvironmentVariable("H7600_NO_AUTOCONNECT", {}).isNotEmpty())
@@ -83,6 +84,7 @@ H7600ControlEditor::~H7600ControlEditor()
     link.onKeys = nullptr;
     link.onConnectionChanged = nullptr;
     link.onScreen = nullptr;
+    link.onScreenMayChange = nullptr;
     setLookAndFeel(nullptr);
 }
 

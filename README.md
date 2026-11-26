@@ -11,7 +11,7 @@ Features (all run time only; nothing is ever saved to the unit):
   (stored on the Mac), Enter or Load to load the preset on the unit (confirmed by reading it back).
 * **Parameters**: controls built from the loaded program (its own menu pages, ranges and value
   formats); moves are sent live, coalesced and acknowledged; front-panel changes move the controls.
-* **LCD**: a live mirror of the unit's screen.
+* **LCD**: a mirror of the unit's screen, refreshed after activity (no polling: each dump makes the unit flash "sending screen bitmap").
 * Follows program changes made on the front panel, survives the unit power-cycling and the MIDI
   interface being unplugged.
 

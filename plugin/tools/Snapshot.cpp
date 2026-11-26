@@ -74,9 +74,33 @@ static int liveParam(const juce::File& dir, const juce::String& knob, double val
     return 0;
 }
 
+// LCD check (read-only): H7600Snapshot <out-dir> --lcd <seconds>
+static int lcdOnly(const juce::File& dir, int seconds)
+{
+    H7600ControlProcessor proc;
+    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+    auto* editor = dynamic_cast<H7600ControlEditor*>(ed.get());
+    ed->setSize(1320, 820);
+    ed->addToDesktop(0);
+    ed->setVisible(true);
+    pump(3000); // connect + initial program read
+    int dumps = 0;
+    auto& link = proc.getLink();
+    auto prev = link.onScreen;
+    link.onScreen = [&dumps, prev](const h7600::ScreenDump& d) { ++dumps; if (prev) prev(d); };
+    editor->showPageForTools(2);
+    pump(seconds * 1000);
+    std::printf("screen dumps in %d s with the LCD tab open and no activity: %d\n", seconds, dumps);
+    save(*ed, dir.getChildFile("live_lcd.png"));
+    ed->removeFromDesktop();
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    if (argc > 3 && juce::String(argv[2]) == "--lcd")
+        return lcdOnly(juce::File(juce::String(argv[1])), juce::String(argv[3]).getIntValue());
     if (argc > 4 && juce::String(argv[2]) == "--param")
         return liveParam(juce::File(juce::String(argv[1])), argv[3], juce::String(argv[4]).getDoubleValue());
     if (argc > 2 && juce::String(argv[2]) == "--live")

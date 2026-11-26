@@ -59,6 +59,9 @@ public:
     std::function<void(const juce::StringArray&)> onKeys;
     std::function<void()> onConnectionChanged;
     std::function<void(const h7600::ScreenDump&)> onScreen;
+    /// Something happened that can change the unit's screen: a front-panel
+    /// key or knob, one of our parameter changes acknowledged, a program read.
+    std::function<void()> onScreenMayChange;
 
 private:
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage&) override;
