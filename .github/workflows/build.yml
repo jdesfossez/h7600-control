@@ -1,0 +1,84 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (AU, VST3, Standalone)
+            os: macos-latest
+            generator: Ninja
+            artefact: macOS
+          - name: Windows (VST3, Standalone)
+            os: windows-latest
+            generator: Visual Studio 17 2022
+            artefact: Windows
+          - name: Linux (VST3, Standalone)
+            os: ubuntu-24.04
+            generator: Ninja
+            artefact: Linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config \
+            libasound2-dev libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            libgl1-mesa-dev
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja || true
+
+      - name: Cache fetched dependencies (JUCE, Catch2, nlohmann/json)
+        uses: actions/cache@v4
+        with:
+          path: .deps
+          key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G "${{ matrix.generator }}"
+          -DCMAKE_BUILD_TYPE=Release
+          -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Validate the Audio Unit
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "build/plugin/H7600Control_artefacts/Release/AU/H7600 Control.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx H76c H7ct
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: H7600-Control-${{ matrix.artefact }}
+          path: |
+            build/plugin/H7600Control_artefacts/Release/AU
+            build/plugin/H7600Control_artefacts/Release/VST3
+            build/plugin/H7600Control_artefacts/Release/Standalone
+          if-no-files-found: error
