@@ -36,6 +36,15 @@ struct Knob
     std::string displayValue() const; // value rendered with format
 };
 
+/// A MENUPAGE with the knobs it shows directly (indices into Sigfile::knobs).
+struct MenuPage
+{
+    std::string name;  // operator name, e.g. "mastersmenu"
+    std::string title; // e.g. "master params"
+    std::string tab;   // short soft-key label, e.g. "main"
+    std::vector<std::size_t> knobs;
+};
+
 struct Sigfile
 {
     std::string programName;
@@ -45,7 +54,18 @@ struct Sigfile
 
     const Knob* findKnob(std::string_view name) const;
     const Knob* findKnobByModule(int moduleIndex) const;
+
+    /// Pages reachable from the HEAD's menus (depth-first, as on the unit),
+    /// keeping only pages that show at least one knob. Knobs on no page are
+    /// collected in a final "other" page.
+    std::vector<MenuPage> pages() const;
 };
+
+/// Snaps a value to the knob's step and range.
+double quantize(const Knob& k, double v);
+/// Text sent in a ParamSet for value v: integer for integer steps, otherwise
+/// as many decimals as the step needs (e.g. step 0.01 -> "0.66").
+std::string valueText(const Knob& k, double v);
 
 std::optional<Sigfile> parseSigfile(std::string_view text);
 

@@ -89,3 +89,49 @@ TEST_CASE("non-sigfile text is rejected")
 {
     CHECK_FALSE(parseSigfile("hello world"));
 }
+
+TEST_CASE("menu pages follow the HEAD menus, depth first")
+{
+    auto sf = load("sigfile_quick_0a_breathing_canyon.syx");
+    auto pages = sf.pages();
+    REQUIRE(pages.size() == 4);
+    CHECK(pages[0].title == "master params");
+    CHECK(pages[0].tab == "main");
+    std::vector<std::string> names;
+    for (auto i : pages[0].knobs) names.push_back(sf.knobs[i].name);
+    CHECK(names == std::vector<std::string>{ "Km_dlys", "Km_rates", "Km_depths", "Km_fdbck", "kdrylev", "kwetlev", "trim" });
+    CHECK(pages[1].tab == "rates");
+    CHECK(pages[1].knobs.size() == 6);
+    CHECK(pages[2].tab == "depths");
+    CHECK(pages[3].tab == "delays");
+    // Every knob is placed exactly once.
+    std::size_t total = 0;
+    for (auto& p : pages) total += p.knobs.size();
+    CHECK(total == sf.knobs.size());
+}
+
+TEST_CASE("Ducked Delays pages include TEXTKNOBs")
+{
+    auto sf = load("sigfile_quick_0a_ducked_delays.syx");
+    auto pages = sf.pages();
+    REQUIRE(pages.size() >= 2);
+    CHECK(pages[0].tab == "delay");
+    CHECK(pages[1].tab == "ducking");
+    bool hasText = false;
+    for (auto i : pages[0].knobs) hasText |= sf.knobs[i].kind == KnobKind::TextKnob;
+    CHECK(hasText);
+}
+
+TEST_CASE("value text and quantize")
+{
+    auto sf = load("sigfile_quick_0a_breathing_canyon.syx");
+    auto& rate = *sf.findKnob("Krate1");
+    CHECK(valueText(rate, 0.661) == "0.66");
+    CHECK(valueText(rate, 500) == "100.00");
+    auto& dly = *sf.findKnob("Km_dlys");
+    CHECK(valueText(dly, 49.6) == "50"); // matches the bytes the unit accepted
+    auto& trim = *sf.findKnob("trim");
+    CHECK(valueText(trim, -12.2) == "-12");
+    CHECK(valueText(trim, 5) == "0");
+    CHECK(quantize(trim, -25) == -20);
+}

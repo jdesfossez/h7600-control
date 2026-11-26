@@ -1,7 +1,12 @@
 #include "h7600/Sigfile.h"
 #include "h7600/Protocol.h"
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <functional>
+#include <map>
+#include <set>
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
@@ -151,6 +156,89 @@ const Knob* Sigfile::findKnobByModule(int idx) const
         if (k.moduleIndex == idx)
             return &k;
     return nullptr;
+}
+
+std::vector<MenuPage> Sigfile::pages() const
+{
+    std::map<std::string, const SigEntry*> byName;
+    for (auto& e : entries)
+        byName[e.name()] = &e;
+    std::map<std::string, std::size_t> knobByName;
+    for (std::size_t i = 0; i < knobs.size(); ++i)
+        knobByName[knobs[i].name] = i;
+
+    auto objName = [](const std::string& tok) -> std::string
+    {
+        const std::string suffix = "-obj";
+        if (tok.size() > suffix.size() && tok.compare(tok.size() - suffix.size(), suffix.size(), suffix) == 0)
+            return tok.substr(0, tok.size() - suffix.size());
+        return {};
+    };
+
+    std::vector<MenuPage> out;
+    std::set<std::string> visited;
+    std::set<std::size_t> placed;
+    std::function<void(const SigEntry&)> visit = [&](const SigEntry& menu)
+    {
+        if (! visited.insert(menu.name()).second)
+            return;
+        MenuPage page;
+        page.name = menu.name();
+        page.title = menu.tokens.size() > 1 ? menu.tokens[1] : menu.name();
+        page.tab = menu.tokens.size() > 2 ? menu.tokens[2] : page.title;
+        while (! page.tab.empty() && page.tab.front() == ' ') page.tab.erase(page.tab.begin());
+        std::vector<const SigEntry*> children;
+        for (std::size_t i = 4; i < menu.tokens.size(); ++i)
+        {
+            auto n = objName(menu.tokens[i]);
+            if (n.empty()) continue;
+            if (auto k = knobByName.find(n); k != knobByName.end())
+            {
+                if (placed.insert(k->second).second) page.knobs.push_back(k->second);
+            }
+            else if (auto e = byName.find(n); e != byName.end() && e->second->type == "MENUPAGE")
+                children.push_back(e->second);
+        }
+        if (! page.knobs.empty()) out.push_back(std::move(page));
+        for (auto* c : children) visit(*c);
+    };
+
+    if (! entries.empty())
+        for (auto& tok : entries.front().tokens)
+            if (auto n = objName(tok); ! n.empty())
+                if (auto e = byName.find(n); e != byName.end() && e->second->type == "MENUPAGE")
+                    visit(*e->second);
+    // Menus not reachable from HEAD (unusual) still get a page.
+    for (auto& e : entries)
+        if (e.type == "MENUPAGE") visit(e);
+
+    MenuPage other { "other", "other params", "other", {} };
+    for (std::size_t i = 0; i < knobs.size(); ++i)
+        if (! placed.count(i)) other.knobs.push_back(i);
+    if (! other.knobs.empty()) out.push_back(std::move(other));
+    return out;
+}
+
+double quantize(const Knob& k, double v)
+{
+    double lo = std::min(k.min, k.max), hi = std::max(k.min, k.max);
+    v = std::clamp(v, lo, hi);
+    if (k.step > 0)
+        v = k.min + std::round((v - k.min) / k.step) * k.step;
+    return std::clamp(v, lo, hi);
+}
+
+std::string valueText(const Knob& k, double v)
+{
+    v = quantize(k, v);
+    int decimals = 0;
+    for (double s = k.step; decimals < 6 && s > 0 && std::fabs(s - std::round(s)) > 1e-9; s *= 10)
+        ++decimals;
+    char buf[64];
+    std::snprintf(buf, sizeof buf, "%.*f", decimals, v);
+    std::string out = buf;
+    if (out == "-0") out = "0";
+    return out;
 }
 
 std::optional<Sigfile> parseSigfile(std::string_view text)
