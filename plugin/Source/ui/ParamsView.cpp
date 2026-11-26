@@ -14,6 +14,10 @@ ParamControl::ParamControl(const h7600::Knob& k) : model(k)
     {
         double lo = std::min(model.min, model.max), hi = std::max(model.min, model.max);
         slider.setRange(lo, hi > lo ? hi : lo + 1, model.step > 0 ? model.step : 0);
+        // Very wide ranges (decay 0-1000 s, 1-20 kHz) get a skewed slider so
+        // useful values are not crammed at one end.
+        if (lo >= 0 && model.step > 0 && (hi - lo) / model.step > 2000)
+            slider.setSkewFactorFromMidPoint(lo + (hi - lo) / 20.0);
         slider.setValue(model.value, juce::dontSendNotification);
         slider.setDoubleClickReturnValue(true, model.value);
         slider.setColour(juce::Slider::trackColourId, theme::red);
