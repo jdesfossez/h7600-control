@@ -37,6 +37,36 @@ static int live(const juce::File& dir, juce::StringArray numbers)
         std::printf("after load %s: %s\n", n.toRawUTF8(), editor->getStatusText().toRawUTF8());
         save(*ed, dir.getChildFile("live_load_" + n + ".png"));
     }
+    // Parameter page for the last program.
+    editor->showPageForTools(1);
+    pump(300);
+    save(*ed, dir.getChildFile("live_params.png"));
+    return 0;
+}
+
+// Live parameter test: H7600Snapshot <out-dir> --param <knob> <value>
+// Moves a control through the UI path, re-reads the program and prints the value.
+static int liveParam(const juce::File& dir, const juce::String& knob, double value)
+{
+    H7600ControlProcessor proc;
+    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+    auto* editor = dynamic_cast<H7600ControlEditor*>(ed.get());
+    ed->setSize(1320, 820);
+    ed->addToDesktop(0);
+    ed->setVisible(true);
+    editor->showPageForTools(1);
+    pump(4000);
+    auto& params = editor->getParams();
+    auto* before = params.currentSigfile().findKnob(knob.toStdString());
+    if (! before) { std::printf("knob %s not found in \"%s\"\n", knob.toRawUTF8(), params.currentSigfile().programName.c_str()); return 1; }
+    std::printf("program %s, %s before: %g\n", params.currentSigfile().programName.c_str(), knob.toRawUTF8(), before->value);
+    params.setKnobForTools(knob.toStdString(), value);
+    pump(800);
+    save(*ed, dir.getChildFile("live_param_" + knob + ".png"));
+    proc.getLink().requestSigfile();
+    pump(4000);
+    auto* after = params.currentSigfile().findKnob(knob.toStdString());
+    std::printf("%s read back from unit: %g\n", knob.toRawUTF8(), after ? after->value : -999.0);
     ed->removeFromDesktop();
     return 0;
 }
@@ -44,6 +74,8 @@ static int live(const juce::File& dir, juce::StringArray numbers)
 int main(int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    if (argc > 4 && juce::String(argv[2]) == "--param")
+        return liveParam(juce::File(juce::String(argv[1])), argv[3], juce::String(argv[4]).getDoubleValue());
     if (argc > 2 && juce::String(argv[2]) == "--live")
     {
         juce::StringArray nums;

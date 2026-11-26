@@ -1,12 +1,23 @@
 #include "H7600Link.h"
 
-H7600Link::H7600Link() { startTimer(100); }
+H7600Link::H7600Link()
+{
+    sender.onFailed = [this](const std::string& id, const std::string& v)
+    { status("The unit did not acknowledge " + juce::String(id) + " = " + juce::String(v)); };
+    startTimer(10);
+}
 
 H7600Link::~H7600Link()
 {
     stopTimer();
     close();
     masterReference.clear();
+}
+
+void H7600Link::setDeviceId(int id)
+{
+    deviceId = static_cast<std::uint8_t>(juce::jlimit(0, 127, id));
+    sender.setDeviceId(deviceId);
 }
 
 juce::StringArray H7600Link::availableDevices()
@@ -22,6 +33,7 @@ juce::StringArray H7600Link::availableDevices()
 bool H7600Link::open(const juce::String& name)
 {
     close();
+    deviceName = name; // remembered even if opening fails, so the watchdog can retry
     juce::String inId, outId;
     for (auto& d : juce::MidiInput::getAvailableDevices())
         if (d.name == name) inId = d.identifier;
@@ -34,13 +46,16 @@ bool H7600Link::open(const juce::String& name)
     }
     if (! isOpen())
     {
-        close();
+        input.reset();
+        output.reset();
         status("Cannot open MIDI device \"" + name + "\"");
+        if (onConnectionChanged) onConnectionChanged();
         return false;
     }
-    deviceName = name;
     input->start();
     status("Connected to " + name + ", device id " + juce::String(deviceId));
+    if (onConnectionChanged) onConnectionChanged();
+    scheduleRefresh(300); // read the loaded program
     return true;
 }
 
@@ -50,6 +65,9 @@ void H7600Link::close()
     input.reset();
     output.reset();
     tracker.clear();
+    sender.clear();
+    sigfilePending = false;
+    responding = false;
 }
 
 void H7600Link::send(const h7600::Bytes& b)
@@ -63,24 +81,7 @@ void H7600Link::status(const juce::String& s)
     if (onStatus) onStatus(s);
 }
 
-void H7600Link::requestSigfile()
-{
-    if (! isOpen()) { status("Not connected"); return; }
-    tracker.expect(h7600::Code::SigfileWantQuick, nowMs(), 10000,
-        [this](const h7600::Frame& f)
-        {
-            if (auto sf = h7600::parseSigfile(h7600::payloadText(f)))
-            {
-                status("Program: " + juce::String(sf->programName) + " (" + juce::String((int) sf->knobs.size()) + " knobs)");
-                if (onSigfile) onSigfile(*sf);
-            }
-            else
-                status("Could not parse sigfile");
-        },
-        [this](h7600::Code) { status("No reply to sigfile request (is SYSTEM EXCLUSIVE on?)"); });
-    send(h7600::makeWant(deviceId, h7600::Code::SigfileWantQuick));
-    status("Requesting sigfile...");
-}
+void H7600Link::scheduleRefresh(int delayMs) { refreshAt = nowMs() + delayMs; }
 
 void H7600Link::loadProgram(int number)
 {
@@ -88,19 +89,40 @@ void H7600Link::loadProgram(int number)
     for (auto& m : h7600::makeProgramSelect(deviceId, midiChannel, number))
         send(m);
     status("Loading " + juce::String(number) + "...");
-    juce::WeakReference<H7600Link> weak(this);
-    juce::Timer::callAfterDelay(1200, [weak]
-    {
-        if (auto* self = weak.get())
-            self->requestSigfile();
-    });
+    scheduleRefresh(1200);
 }
 
-void H7600Link::setParameter(const h7600::Knob& knob, const juce::String& value)
+void H7600Link::requestSigfile()
+{
+    if (! isOpen()) { status("Not connected"); return; }
+    if (sigfilePending) return;
+    sigfilePending = true;
+    tracker.expect(h7600::Code::SigfileWantQuick, nowMs(), 8000,
+        [this](const h7600::Frame& f)
+        {
+            sigfilePending = false;
+            if (auto sf = h7600::parseSigfile(h7600::payloadText(f)))
+            {
+                lastSigfileEntries = (int) sf->entries.size();
+                if (onSigfile) onSigfile(*sf);
+            }
+            else
+                status("Could not read the program description from the unit");
+        },
+        [this](h7600::Code)
+        {
+            sigfilePending = false;
+            responding = false;
+            status("The H7600 is not answering. Check MIDI cables, SETUP > MIDI (MIDI enabled, system exclusive on) and the device ID.");
+            if (onConnectionChanged) onConnectionChanged();
+        });
+    send(h7600::makeWant(deviceId, h7600::Code::SigfileWantQuick));
+}
+
+void H7600Link::setParameter(const h7600::Knob& knob, double value)
 {
     if (! isOpen()) return;
-    tracker.expect(h7600::Code::ParamSet, nowMs(), 3000, {}, [this](h7600::Code) { status("Parameter change not acknowledged"); });
-    send(h7600::makeParamSet(deviceId, knob.paramId(), value.toStdString()));
+    sender.set(knob.paramId(), h7600::valueText(knob, value));
 }
 
 void H7600Link::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& m)
@@ -120,18 +142,71 @@ void H7600Link::handleFrame(const h7600::Frame& f)
 {
     if (f.deviceId != deviceId && deviceId != h7600::kBroadcastDevice)
         return;
+    if (! responding)
+    {
+        // First reply after connecting or after the unit came back.
+        bool wasKnown = lastSigfileEntries > 0;
+        responding = true;
+        if (onConnectionChanged) onConnectionChanged();
+        if (wasKnown && f.code != static_cast<std::uint8_t>(h7600::Code::SigfileDumpRemote))
+            scheduleRefresh(500);
+    }
+    if (sender.onFrame(f, nowMs()))
+        return;
     if (tracker.onFrame(f))
         return;
     if (auto c = h7600::parseParamSet(f))
     {
-        if (onParamChange) onParamChange(*c);
+        // Module ids beyond the program's own (e.g. 4005xxxx) are the unit's
+        // program browser: a load from the front panel follows.
+        auto idx = c->moduleIndex();
+        if (! idx || *idx > lastSigfileEntries)
+            scheduleRefresh(1500);
+        else if (onParamChange)
+            onParamChange(*c);
     }
     else if (auto mask = h7600::keyMask(f))
     {
         juce::StringArray keys;
         for (auto& k : h7600::pressedKeys(*mask)) keys.add(k);
         if (onKeys) onKeys(keys);
+        // ENTER / SELECT on the panel may have loaded a program: re-read it.
+        if (keys.contains("ENTER") || keys.contains("SELECT"))
+            scheduleRefresh(1500);
     }
 }
 
-void H7600Link::timerCallback() { tracker.poll(nowMs()); }
+void H7600Link::watchdog()
+{
+    if (deviceName.isEmpty()) return;
+    const bool present = availableDevices().contains(deviceName);
+    if (isOpen() && ! present)
+    {
+        auto name = deviceName;
+        close();
+        deviceName = name;
+        status("MIDI interface \"" + name + "\" disconnected; waiting for it to come back...");
+        if (onConnectionChanged) onConnectionChanged();
+    }
+    else if (! isOpen() && present)
+        open(deviceName);
+}
+
+void H7600Link::timerCallback()
+{
+    const auto now = nowMs();
+    tracker.poll(now);
+    if (isOpen())
+        if (auto m = sender.poll(now))
+            send(*m);
+    if (refreshAt != 0 && now >= refreshAt && sender.idle())
+    {
+        refreshAt = 0;
+        requestSigfile();
+    }
+    if (now >= nextWatchdog)
+    {
+        nextWatchdog = now + 2000;
+        watchdog();
+    }
+}

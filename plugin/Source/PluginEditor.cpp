@@ -44,27 +44,14 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     };
     addAndMakeVisible(browser);
 
-    sigfileButton.onClick = [this] { owner.getLink().requestSigfile(); };
-    paramsPage.addAndMakeVisible(sigfileButton);
-    knobList.setMultiLine(true);
-    knobList.setReadOnly(true);
-    knobList.setFont(juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain)));
-    paramsPage.addAndMakeVisible(knobList);
-    addChildComponent(paramsPage);
+    params.onChange = [this](const h7600::Knob& k, double v) { owner.getLink().setParameter(k, v); };
+    params.onRefresh = [this] { owner.getLink().requestSigfile(); };
+    addChildComponent(params);
 
     link.onStatus = [this](const juce::String& s) { setStatus(s); };
     link.onSigfile = [this](const h7600::Sigfile& sf) { showSigfile(sf); };
-    link.onParamChange = [this](const h7600::ParamChange& c)
-    {
-        juce::String name = c.paramId;
-        if (auto idx = c.moduleIndex())
-            if (auto* k = current.findKnobByModule(*idx)) name = k->name;
-        log("unit changed " + name + " -> " + c.value);
-    };
-    link.onKeys = [this](const juce::StringArray& keys)
-    {
-        if (! keys.isEmpty()) log("key: " + keys.joinIntoString("+"));
-    };
+    link.onParamChange = [this](const h7600::ParamChange& c) { params.applyFromUnit(c); };
+    link.onConnectionChanged = [this] { connectionChanged(); };
 
     refreshDevices();
     if (! link.isOpen() && ! juce::SystemStats::getEnvironmentVariable("H7600_NO_AUTOCONNECT", {}).isNotEmpty())
@@ -75,6 +62,7 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
         refreshDevices();
     }
     setStatus(link.isOpen() ? "Connected to " + link.getDeviceName() : "Not connected");
+    if (link.isOpen()) link.requestSigfile(); // editor reopened: show the current program
 
     setResizable(true, true);
     setResizeLimits(1000, 640, 2400, 1600);
@@ -89,13 +77,14 @@ H7600ControlEditor::~H7600ControlEditor()
     link.onSigfile = nullptr;
     link.onParamChange = nullptr;
     link.onKeys = nullptr;
+    link.onConnectionChanged = nullptr;
     setLookAndFeel(nullptr);
 }
 
 void H7600ControlEditor::showPage(int page)
 {
     browser.setVisible(page == 0);
-    paramsPage.setVisible(page == 1);
+    params.setVisible(page == 1);
     browseTab.setToggleState(page == 0, juce::dontSendNotification);
     paramsTab.setToggleState(page == 1, juce::dontSendNotification);
     if (page == 0) browser.focusSearch();
@@ -119,10 +108,18 @@ void H7600ControlEditor::refreshDevices()
         deviceBox.setText(connected, juce::dontSendNotification);
 }
 
+void H7600ControlEditor::connectionChanged()
+{
+    auto& link = owner.getLink();
+    params.setConnected(link.isOpen(), link.isResponding());
+    refreshDevices();
+    repaint();
+}
+
 void H7600ControlEditor::showSigfile(const h7600::Sigfile& sf)
 {
-    current = sf;
     programName = sf.programName;
+    params.showSigfile(sf);
     if (pendingLoad >= 0)
     {
         // Confirm the load against the catalog name (the sigfile name can carry a suffix).
@@ -135,29 +132,12 @@ void H7600ControlEditor::showSigfile(const h7600::Sigfile& sf)
             setStatus("Loaded " + juce::String(pendingLoad) + " " + juce::String(p->name));
         }
         else
-            setStatus("Asked for " + juce::String(pendingLoad) + ", the unit has \"" + juce::String(sf.programName)
-                      + "\" loaded. Is SETUP > MIDI > MIDI map set to none?");
+            setStatus("Asked for " + juce::String(pendingLoad) + " but the unit has \"" + juce::String(sf.programName)
+                      + "\" loaded. Set SETUP > MIDI > MIDI map to none on the H7600.");
         pendingLoad = -1;
     }
 
-    juce::String text;
-    text << "Program: " << sf.programName << "\n\n";
-    for (auto& k : sf.knobs)
-    {
-        text << juce::String(k.paramId()).paddedRight(' ', 8) << juce::String(k.name).paddedRight(' ', 14)
-             << juce::String(k.displayValue()).paddedRight(' ', 30);
-        if (k.kind == h7600::KnobKind::TextKnob) text << "(" << (int) k.options.size() << " choices)";
-        else text << "[" << k.min << " .. " << k.max << " step " << k.step << "]";
-        text << "\n";
-    }
-    knobList.setText(text, false);
     repaint();
-}
-
-void H7600ControlEditor::log(const juce::String& s)
-{
-    knobList.moveCaretToEnd();
-    knobList.insertTextAtCaret(s + "\n");
 }
 
 void H7600ControlEditor::paint(juce::Graphics& g)
@@ -172,7 +152,7 @@ void H7600ControlEditor::paint(juce::Graphics& g)
     auto sub = header.removeFromLeft(380);
     g.drawText(programName.isEmpty() ? juce::String("Control") : juce::String(juce::CharPointer_UTF8("Control  \xc2\xb7  ")) + programName, sub, juce::Justification::centredLeft);
 
-    const bool on = owner.getLink().isOpen();
+    const bool on = owner.getLink().isOpen() && owner.getLink().isResponding();
     auto led = ledArea.withSizeKeepingCentre(ledArea.getWidth(), 20);
     auto dot = led.removeFromLeft(10).withSizeKeepingCentre(10, 10).toFloat();
     if (on)
@@ -207,9 +187,5 @@ void H7600ControlEditor::resized()
 
     r.removeFromBottom(16);
     browser.setBounds(r);
-    paramsPage.setBounds(r);
-    auto pr = paramsPage.getLocalBounds();
-    sigfileButton.setBounds(pr.removeFromTop(34).removeFromLeft(160));
-    pr.removeFromTop(10);
-    knobList.setBounds(pr);
+    params.setBounds(r);
 }

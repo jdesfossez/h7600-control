@@ -97,6 +97,21 @@ std::optional<Knob> knobFrom(const SigEntry& e)
         k.value = num(t[6]);
         return k;
     }
+    if (e.type == "SKNOB3" && t.size() >= 9)
+    {
+        // SKNOB3 name "fmt" "unit" <?> <step> <value> <out> <min> <max> <src>
+        // Layout inferred from captures (not in the manuals): Ducked Delays
+        // "0 1 299.9954 dly1-out 0 2000" shows as 300 ms on the LCD.
+        k.kind = KnobKind::Knob;
+        k.name = t[0];
+        k.format = t[1];
+        k.unit = t[2];
+        k.step = num(t[4]);
+        k.value = num(t[5]);
+        k.min = num(t[7]);
+        k.max = num(t[8]);
+        return k;
+    }
     if (e.type == "TEXTKNOB" && t.size() >= 5)
     {
         // TEXTKNOB name "fmt" "unit" <count> <value> "opt0" "opt1" ...
@@ -175,6 +190,7 @@ std::vector<MenuPage> Sigfile::pages() const
         return {};
     };
 
+    auto isMenu = [](const SigEntry& e) { return e.type == "MENUPAGE" || e.type == "HMENUPAGE"; };
     std::vector<MenuPage> out;
     std::set<std::string> visited;
     std::set<std::size_t> placed;
@@ -182,13 +198,16 @@ std::vector<MenuPage> Sigfile::pages() const
     {
         if (! visited.insert(menu.name()).second)
             return;
+        // MENUPAGE name "title" "tab" count objs...
+        // HMENUPAGE name n x y "title" "tab" count objs... "tab"
+        const std::size_t t0 = menu.type == "HMENUPAGE" ? 4 : 1;
         MenuPage page;
         page.name = menu.name();
-        page.title = menu.tokens.size() > 1 ? menu.tokens[1] : menu.name();
-        page.tab = menu.tokens.size() > 2 ? menu.tokens[2] : page.title;
+        page.title = menu.tokens.size() > t0 ? menu.tokens[t0] : menu.name();
+        page.tab = menu.tokens.size() > t0 + 1 ? menu.tokens[t0 + 1] : page.title;
         while (! page.tab.empty() && page.tab.front() == ' ') page.tab.erase(page.tab.begin());
         std::vector<const SigEntry*> children;
-        for (std::size_t i = 4; i < menu.tokens.size(); ++i)
+        for (std::size_t i = t0 + 3; i < menu.tokens.size(); ++i)
         {
             auto n = objName(menu.tokens[i]);
             if (n.empty()) continue;
@@ -196,7 +215,7 @@ std::vector<MenuPage> Sigfile::pages() const
             {
                 if (placed.insert(k->second).second) page.knobs.push_back(k->second);
             }
-            else if (auto e = byName.find(n); e != byName.end() && e->second->type == "MENUPAGE")
+            else if (auto e = byName.find(n); e != byName.end() && isMenu(*e->second))
                 children.push_back(e->second);
         }
         if (! page.knobs.empty()) out.push_back(std::move(page));
@@ -206,11 +225,11 @@ std::vector<MenuPage> Sigfile::pages() const
     if (! entries.empty())
         for (auto& tok : entries.front().tokens)
             if (auto n = objName(tok); ! n.empty())
-                if (auto e = byName.find(n); e != byName.end() && e->second->type == "MENUPAGE")
+                if (auto e = byName.find(n); e != byName.end() && isMenu(*e->second))
                     visit(*e->second);
     // Menus not reachable from HEAD (unusual) still get a page.
     for (auto& e : entries)
-        if (e.type == "MENUPAGE") visit(e);
+        if (isMenu(e)) visit(e);
 
     MenuPage other { "other", "other params", "other", {} };
     for (std::size_t i = 0; i < knobs.size(); ++i)

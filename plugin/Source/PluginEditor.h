@@ -3,6 +3,7 @@
 
 #include "PluginProcessor.h"
 #include "ui/BrowserView.h"
+#include "ui/ParamsView.h"
 #include "ui/Theme.h"
 
 /// Header (brand, loaded program, connection LED, MIDI settings, page tabs)
@@ -17,6 +18,8 @@ public:
     void resized() override;
 
     BrowserView& getBrowser() { return browser; }
+    void showPageForTools(int p) { showPage(p); }
+    ParamsView& getParams() { return params; }
     juce::String getStatusText() const { return statusText; }
 
 private:
@@ -24,7 +27,7 @@ private:
     void showPage(int page);
     void setStatus(const juce::String&);
     void showSigfile(const h7600::Sigfile&);
-    void log(const juce::String&);
+    void connectionChanged();
 
     H7600ControlProcessor& owner;
     theme::LookAndFeel lnf;
@@ -37,10 +40,7 @@ private:
     juce::Rectangle<int> ledArea;
 
     BrowserView browser;
-    juce::Component paramsPage;
-    juce::TextButton sigfileButton { "Request sigfile" };
-    juce::TextEditor knobList;
-    h7600::Sigfile current;
+    ParamsView params;
     int pendingLoad = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(H7600ControlEditor)

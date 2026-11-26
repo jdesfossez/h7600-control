@@ -135,3 +135,31 @@ TEST_CASE("value text and quantize")
     CHECK(valueText(trim, 5) == "0");
     CHECK(quantize(trim, -25) == -20);
 }
+
+TEST_CASE("Ambience: SKNOB3 decay and the HMENUPAGE expert page")
+{
+    auto sf = load("sigfile_quick_0a_ambience.syx");
+    CHECK(sf.programName == "Ambience");
+    auto* decay = sf.findKnob("rdcy1");
+    REQUIRE(decay);
+    CHECK(decay->value == Catch::Approx(0.9999));
+    CHECK(decay->step == Catch::Approx(0.01));
+    CHECK(decay->max == 1000);
+    CHECK(decay->displayValue() == "decay :    1.00 sec"); // as on the LCD
+    auto pages = sf.pages();
+    REQUIRE(pages.size() == 2);
+    CHECK(pages[0].tab == "ambient");
+    CHECK(pages[0].knobs.size() == 16);
+    CHECK(pages[1].title == "expert params");
+    CHECK(pages[1].tab == "expert");
+    CHECK(pages[1].knobs.size() == 8);
+}
+
+TEST_CASE("Ducked Delays: SKNOB3 delay values")
+{
+    auto sf = load("sigfile_quick_0a_ducked_delays.syx");
+    auto* d1 = sf.findKnob("dly1");
+    REQUIRE(d1);
+    CHECK(d1->displayValue() == "delay1  :  300 ms"); // LCD shows 300 ms
+    CHECK(d1->max == 2000);
+}

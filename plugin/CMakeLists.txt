@@ -22,7 +22,8 @@ target_sources(H7600Control PRIVATE
     Source/PluginEditor.cpp
     Source/H7600Link.cpp
     Source/UserStore.cpp
-    Source/ui/BrowserView.cpp)
+    Source/ui/BrowserView.cpp
+    Source/ui/ParamsView.cpp)
 
 target_compile_definitions(H7600Control PUBLIC
     JUCE_WEB_BROWSER=0
@@ -47,7 +48,8 @@ target_sources(H7600Snapshot PRIVATE
     Source/PluginEditor.cpp
     Source/H7600Link.cpp
     Source/UserStore.cpp
-    Source/ui/BrowserView.cpp)
+    Source/ui/BrowserView.cpp
+    Source/ui/ParamsView.cpp)
 target_compile_definitions(H7600Snapshot PRIVATE
     JucePlugin_Name="H7600 Control" JUCE_STANDALONE_APPLICATION=1 JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(H7600Snapshot PRIVATE h7600_core H7600Data
