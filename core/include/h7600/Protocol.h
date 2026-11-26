@@ -107,4 +107,38 @@ std::optional<std::uint32_t> keyMask(const Frame& f);
 /// Names of the keys pressed in the mask ("SETUP", "SOFT1", ...).
 std::vector<std::string> pressedKeys(std::uint32_t mask);
 
+// ---- Program load by number (key-press emulation) ----------------------------
+//
+// NOT YET VERIFIED ON HARDWARE. Mirrors what the unit echoes when a program is
+// loaded from the front panel: PROGRAM, digits, ENTER. Only navigation-safe keys
+// are exposed (PROGRAM, 0-9, ENTER, SELECT, CXL); keys that can reach setup,
+// save or delete screens (SETUP, soft keys, ...) have no builder.
+
+enum class SafeKey : std::uint32_t
+{
+    None = 0xFFFFFFFF,
+    Program = 0xF7FFFFFF,
+    Enter = 0xFFFFFFEF,
+    Select = 0xFFFFFEFF,
+    Cancel = 0xFFFFFFDF,
+    Zero = 0xFFEFFFFF,
+    One = 0x7FFFFFFF,
+    Two = 0xFF7FFFFF,
+    Three = 0xFFFF7FFF,
+    Four = 0xBFFFFFFF,
+    Five = 0xFFBFFFFF,
+    Six = 0xFFFFBFFF,
+    Seven = 0xDFFFFFFF,
+    Eight = 0xFFDFFFFF,
+    Nine = 0xFFFFDFFF,
+};
+
+/// One Keypress frame (8 nibbles, high first). SafeKey::None is the release.
+Bytes makeKeyFrame(std::uint8_t deviceId, SafeKey key);
+
+/// Key sequence to load program `number` (1..9999): PROGRAM, digits, ENTER,
+/// optionally SELECT. Each key is a press followed by a release, so the result
+/// alternates press/release frames; send them ~100 ms apart.
+std::vector<Bytes> makeLoadProgram(std::uint8_t deviceId, int number, bool withSelect = false);
+
 } // namespace h7600

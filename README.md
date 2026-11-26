@@ -38,7 +38,13 @@ Frame: `F0 1C 70 <device id> <code> <payload> F7` (device id 0 = broadcast; the 
   (user group), not the bank.
 
 **Safety:** the core library has no builders for codes that write the unit's memory
-(`08`, `0A`, `0F`, `11`, `13`, `15`, `16`) or for keypresses; `makeWant` rejects them.
+(`08`, `0A`, `0F`, `11`, `13`, `15`, `16`); `makeWant` rejects them. Key presses (`01`) can only
+be built for navigation-safe keys (`SafeKey`: PROGRAM, 0-9, ENTER, SELECT, CXL).
+
+**Loading a program by number** (`makeLoadProgram`, not yet verified on hardware): emulates
+PROGRAM, digits, ENTER, as echoed by the unit when loading from the front panel. Neither a bank
+change + Program Change (follows the MIDI map) nor replaying the panel's `3C 4005xxxx`
+messages (program-browser cursor + "load selection") loads a specific number.
 
 ## Build (macOS)
 

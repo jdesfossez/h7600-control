@@ -185,4 +185,34 @@ std::vector<std::string> pressedKeys(std::uint32_t mask)
     return out;
 }
 
+Bytes makeKeyFrame(std::uint8_t deviceId, SafeKey key)
+{
+    const auto m = static_cast<std::uint32_t>(key);
+    return buildFrame(deviceId, Code::Keypress,
+                      nibblize({ static_cast<std::uint8_t>(m >> 24), static_cast<std::uint8_t>(m >> 16),
+                                 static_cast<std::uint8_t>(m >> 8), static_cast<std::uint8_t>(m) }));
+}
+
+std::vector<Bytes> makeLoadProgram(std::uint8_t deviceId, int number, bool withSelect)
+{
+    if (number < 1 || number > 9999)
+        throw std::out_of_range("program number must be 1..9999");
+    static constexpr SafeKey digits[10] = { SafeKey::Zero, SafeKey::One, SafeKey::Two, SafeKey::Three, SafeKey::Four,
+                                            SafeKey::Five, SafeKey::Six, SafeKey::Seven, SafeKey::Eight, SafeKey::Nine };
+    std::vector<SafeKey> keys { SafeKey::Program };
+    for (char ch : std::to_string(number))
+        keys.push_back(digits[ch - '0']);
+    keys.push_back(SafeKey::Enter);
+    if (withSelect)
+        keys.push_back(SafeKey::Select);
+
+    std::vector<Bytes> out;
+    for (auto k : keys)
+    {
+        out.push_back(makeKeyFrame(deviceId, k));
+        out.push_back(makeKeyFrame(deviceId, SafeKey::None));
+    }
+    return out;
+}
+
 } // namespace h7600

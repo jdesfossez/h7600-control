@@ -100,3 +100,43 @@ TEST_CASE("keypress echo decodes to key names")
     CHECK(pressedKeys(0xFBFFFFFFu) == std::vector<std::string>{ "SOFT1" });
     CHECK(pressedKeys(0xFFF7FFFFu) == std::vector<std::string>{ "PARAMETER" });
 }
+
+TEST_CASE("key frames match the unit's own keypress echo")
+{
+    CHECK(makeKeyFrame(1, SafeKey::Program) == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x01, 0x0F, 0x07, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xF7 });
+    CHECK(makeKeyFrame(1, SafeKey::None) == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x01, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xF7 });
+    // Echoed by the unit when Julien typed PROGRAM 4 2 1 0 ENTER on the panel.
+    CHECK(makeKeyFrame(1, SafeKey::Four) == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x01, 0x0B, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xF7 });
+    CHECK(makeKeyFrame(1, SafeKey::Two) == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x01, 0x0F, 0x0F, 0x07, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xF7 });
+    CHECK(makeKeyFrame(1, SafeKey::One) == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x01, 0x07, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xF7 });
+    CHECK(makeKeyFrame(1, SafeKey::Zero) == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x01, 0x0F, 0x0F, 0x0E, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xF7 });
+    CHECK(makeKeyFrame(1, SafeKey::Enter) == Bytes{ 0xF0, 0x1C, 0x70, 0x01, 0x01, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0E, 0x0F, 0xF7 });
+    for (auto k : { SafeKey::Program, SafeKey::Enter, SafeKey::Select, SafeKey::Cancel, SafeKey::Seven })
+        CHECK(pressedKeys(static_cast<std::uint32_t>(k)).size() == 1);
+    CHECK(pressedKeys(static_cast<std::uint32_t>(SafeKey::Select)) == std::vector<std::string>{ "SELECT" });
+    CHECK(pressedKeys(static_cast<std::uint32_t>(SafeKey::Cancel)) == std::vector<std::string>{ "CXL" });
+}
+
+TEST_CASE("makeLoadProgram: PROGRAM, digits, ENTER, each pressed then released")
+{
+    auto seq = makeLoadProgram(1, 4210);
+    REQUIRE(seq.size() == 12);
+    std::vector<std::string> pressed;
+    for (std::size_t i = 0; i < seq.size(); ++i)
+    {
+        auto f = parseFrame(seq[i]);
+        REQUIRE(f);
+        auto keys = pressedKeys(*keyMask(*f));
+        if (i % 2 == 1)
+            CHECK(keys.empty()); // release
+        else
+        {
+            REQUIRE(keys.size() == 1);
+            pressed.push_back(keys[0]);
+        }
+    }
+    CHECK(pressed == std::vector<std::string>{ "PROGRAM", "FOUR", "TWO", "ONE", "ZERO", "ENTER" });
+    CHECK(makeLoadProgram(1, 513, true).size() == 12);
+    CHECK_THROWS(makeLoadProgram(1, 0));
+    CHECK_THROWS(makeLoadProgram(1, 10000));
+}
