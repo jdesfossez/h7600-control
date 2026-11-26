@@ -56,7 +56,6 @@ public:
     std::function<void(const juce::String&)> onStatus;
     std::function<void(const h7600::Sigfile&)> onSigfile;
     std::function<void(const h7600::ParamChange&)> onParamChange;
-    std::function<void(const juce::StringArray&)> onKeys;
     std::function<void()> onConnectionChanged;
     std::function<void(const h7600::ScreenDump&)> onScreen;
     /// Something happened that can change the unit's screen: a front-panel

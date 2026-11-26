@@ -1,5 +1,10 @@
 #include "H7600Link.h"
 
+namespace
+{
+bool is(const h7600::Frame& f, h7600::Code c) { return f.code == static_cast<std::uint8_t>(c); }
+}
+
 H7600Link::H7600Link()
 {
     sender.onFailed = [this](const std::string& id, const std::string& v)
@@ -166,13 +171,11 @@ void H7600Link::handleFrame(const h7600::Frame& f)
         bool wasKnown = lastSigfileEntries > 0;
         responding = true;
         if (onConnectionChanged) onConnectionChanged();
-        if (wasKnown && f.code != static_cast<std::uint8_t>(h7600::Code::SigfileDumpRemote))
+        if (wasKnown && ! is(f, h7600::Code::SigfileDumpRemote))
             scheduleRefresh(500);
     }
-    const bool screenEvent = f.code == static_cast<std::uint8_t>(h7600::Code::Keypress)
-                          || f.code == static_cast<std::uint8_t>(h7600::Code::ParamSet)
-                          || f.code == static_cast<std::uint8_t>(h7600::Code::ParamAck)
-                          || f.code == static_cast<std::uint8_t>(h7600::Code::SigfileDumpRemote);
+    const bool screenEvent = is(f, h7600::Code::Keypress) || is(f, h7600::Code::ParamSet)
+                          || is(f, h7600::Code::ParamAck) || is(f, h7600::Code::SigfileDumpRemote);
     if (screenEvent && onScreenMayChange)
         onScreenMayChange();
     if (sender.onFrame(f, nowMs()))
@@ -191,12 +194,10 @@ void H7600Link::handleFrame(const h7600::Frame& f)
     }
     else if (auto mask = h7600::keyMask(f))
     {
-        juce::StringArray keys;
-        for (auto& k : h7600::pressedKeys(*mask)) keys.add(k);
-        if (onKeys) onKeys(keys);
         // ENTER / SELECT on the panel may have loaded a program: re-read it.
-        if (keys.contains("ENTER") || keys.contains("SELECT"))
-            scheduleRefresh(1500);
+        for (auto& k : h7600::pressedKeys(*mask))
+            if (k == "ENTER" || k == "SELECT")
+                scheduleRefresh(1500);
     }
 }
 

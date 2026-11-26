@@ -1,130 +1,211 @@
-// Renders the plugin editor to PNGs for visual review:
-//   H7600Snapshot <out-dir>
+// Developer tool: renders the plugin editor to PNG files.
+//
+//   H7600Snapshot <out-dir>                      offline: browser views, no MIDI
+//   H7600Snapshot <out-dir> --screenshots        read-only: README screenshots of the
+//                                                program loaded on the unit (one screen dump)
+//   H7600Snapshot <out-dir> --fixtures <dir>     offline: the same views from messages captured
+//                                                from a unit (tests/fixtures), no MIDI
+//   H7600Snapshot <out-dir> --live <n>...        loads each program through the browser path
+//   H7600Snapshot <out-dir> --param <knob> <v>   moves a control, reads the value back
+//   H7600Snapshot <out-dir> --lcd <seconds>      counts screen dumps with the LCD tab idle
+//
+// Everything sent to the unit is run time only (loads, parameter changes, reads);
+// nothing is saved on it.
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "../Source/PluginEditor.h"
 #include "../Source/PluginProcessor.h"
 
-static void save(juce::Component& c, const juce::File& f)
+namespace
 {
-    auto img = c.createComponentSnapshot(c.getLocalBounds(), true, 2.0f);
-    f.deleteFile();
-    juce::FileOutputStream out(f);
-    juce::PNGImageFormat().writeImageToStream(img, out);
-    std::printf("wrote %s\n", f.getFullPathName().toRawUTF8());
-}
+using Page = H7600ControlEditor::Page;
 
-static void pump(int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil(ms); }
+void pump(int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil(ms); }
 
-// Live mode (talks to the unit, run-time only): H7600Snapshot <out-dir> --live <n1> <n2> ...
-// Loads each program through the browser's load path and snapshots the result.
-static int live(const juce::File& dir, juce::StringArray numbers)
+/// A processor and its editor on the desktop (needed for fonts and focus),
+/// at the editor's default size.
+struct Harness
 {
-    H7600ControlProcessor proc;
-    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
-    auto* editor = dynamic_cast<H7600ControlEditor*>(ed.get());
-    ed->setSize(1320, 820);
-    ed->addToDesktop(0);
-    ed->setVisible(true);
-    pump(500);
-    std::printf("connected: %d (%s)\n", (int) proc.getLink().isOpen(), proc.getLink().getDeviceName().toRawUTF8());
-    for (auto& n : numbers)
+    explicit Harness(bool connect)
     {
-        editor->getBrowser().setSearchText(n);
-        pump(100);
-        editor->getBrowser().loadSelected();
-        pump(5000);
-        std::printf("after load %s: %s\n", n.toRawUTF8(), editor->getStatusText().toRawUTF8());
-        save(*ed, dir.getChildFile("live_load_" + n + ".png"));
+        proc.setAutoConnect(connect);
+        ed.reset(dynamic_cast<H7600ControlEditor*>(proc.createEditor()));
+        ed->setSize(1320, 820);
+        ed->addToDesktop(0);
+        ed->setVisible(true);
     }
-    // Parameter page for the last program.
-    editor->showPageForTools(1);
-    pump(300);
-    save(*ed, dir.getChildFile("live_params.png"));
-    editor->showPageForTools(2);
-    pump(4000);
-    save(*ed, dir.getChildFile("live_lcd.png"));
+    ~Harness() { ed->removeFromDesktop(); }
+
+    void save(const juce::File& f)
+    {
+        auto img = ed->createComponentSnapshot(ed->getLocalBounds(), true, 2.0f);
+        f.deleteFile();
+        juce::FileOutputStream out(f);
+        juce::PNGImageFormat().writeImageToStream(img, out);
+        std::printf("wrote %s\n", f.getFullPathName().toRawUTF8());
+    }
+
+    H7600ControlProcessor proc;
+    std::unique_ptr<H7600ControlEditor> ed;
+};
+
+int offline(const juce::File& dir)
+{
+    Harness h(false);
+    pump(200);
+    h.save(dir.getChildFile("browser_all.png"));
+    h.ed->getBrowser().setSearchText("ambience");
+    pump(200);
+    h.save(dir.getChildFile("browser_search_ambience.png"));
     return 0;
 }
 
-// Live parameter test: H7600Snapshot <out-dir> --param <knob> <value>
-// Moves a control through the UI path, re-reads the program and prints the value.
-static int liveParam(const juce::File& dir, const juce::String& knob, double value)
+// Read-only: shows what is loaded on the unit, never loads or changes anything.
+int screenshots(const juce::File& dir, const juce::String& search)
 {
-    H7600ControlProcessor proc;
-    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
-    auto* editor = dynamic_cast<H7600ControlEditor*>(ed.get());
-    ed->setSize(1320, 820);
-    ed->addToDesktop(0);
-    ed->setVisible(true);
-    editor->showPageForTools(1);
+    Harness h(true);
+    pump(4000); // connect + quick sigfile of the loaded program
+    std::printf("connected: %d (%s), status: %s\n", (int) h.proc.getLink().isOpen(),
+                h.proc.getLink().getDeviceName().toRawUTF8(), h.ed->getStatusText().toRawUTF8());
+    h.ed->showPage(Page::Parameters);
+    pump(300);
+    h.save(dir.getChildFile("parameters.png"));
+    h.ed->showPage(Page::Lcd); // asks for one screen dump
+    pump(3000);
+    h.save(dir.getChildFile("lcd.png"));
+    h.ed->showPage(Page::Browse);
+    h.ed->getBrowser().setSearchText(search); // moving the selection only shows info
+    pump(300);
+    h.save(dir.getChildFile("browse.png"));
+    return 0;
+}
+
+h7600::Bytes readFile(const juce::File& f)
+{
+    juce::MemoryBlock mb;
+    f.loadFileAsData(mb);
+    auto* p = static_cast<const std::uint8_t*>(mb.getData());
+    return { p, p + mb.getSize() };
+}
+
+// Feeds captured replies through the link's callbacks, as if the unit sent them.
+int fixtures(const juce::File& dir, const juce::File& fixturesDir, const juce::String& sigfile, const juce::String& search)
+{
+    Harness h(false);
+    auto& link = h.proc.getLink();
+    auto sf = h7600::parseFrame(readFile(fixturesDir.getChildFile(sigfile)));
+    auto screen = h7600::parseFrame(readFile(fixturesDir.getChildFile("screen_dump_17.syx")));
+    if (! sf || ! screen)
+    {
+        std::printf("fixtures not found in %s\n", fixturesDir.getFullPathName().toRawUTF8());
+        return 1;
+    }
+    if (auto parsed = h7600::parseSigfile(h7600::payloadText(*sf)); parsed && link.onSigfile)
+        link.onSigfile(*parsed);
+    h.ed->showPage(Page::Parameters);
+    pump(300);
+    h.save(dir.getChildFile("parameters.png"));
+    h.ed->showPage(Page::Lcd);
+    if (auto d = h7600::parseScreenDump(*screen); d && link.onScreen)
+        link.onScreen(*d);
+    pump(300);
+    h.save(dir.getChildFile("lcd.png"));
+    h.ed->showPage(Page::Browse);
+    h.ed->getBrowser().setSearchText(search);
+    pump(300);
+    h.save(dir.getChildFile("browse.png"));
+    return 0;
+}
+
+int live(const juce::File& dir, const juce::StringArray& numbers)
+{
+    Harness h(true);
+    pump(500);
+    std::printf("connected: %d (%s)\n", (int) h.proc.getLink().isOpen(), h.proc.getLink().getDeviceName().toRawUTF8());
+    for (auto& n : numbers)
+    {
+        h.ed->getBrowser().setSearchText(n);
+        pump(100);
+        h.ed->getBrowser().loadSelected();
+        pump(5000);
+        std::printf("after load %s: %s\n", n.toRawUTF8(), h.ed->getStatusText().toRawUTF8());
+        h.save(dir.getChildFile("live_load_" + n + ".png"));
+    }
+    h.ed->showPage(Page::Parameters);
+    pump(300);
+    h.save(dir.getChildFile("live_params.png"));
+    h.ed->showPage(Page::Lcd);
     pump(4000);
-    auto& params = editor->getParams();
+    h.save(dir.getChildFile("live_lcd.png"));
+    return 0;
+}
+
+int liveParam(const juce::File& dir, const juce::String& knob, double value)
+{
+    Harness h(true);
+    h.ed->showPage(Page::Parameters);
+    pump(4000);
+    auto& params = h.ed->getParams();
     auto* before = params.currentSigfile().findKnob(knob.toStdString());
-    if (! before) { std::printf("knob %s not found in \"%s\"\n", knob.toRawUTF8(), params.currentSigfile().programName.c_str()); return 1; }
+    if (! before)
+    {
+        std::printf("knob %s not found in \"%s\"\n", knob.toRawUTF8(), params.currentSigfile().programName.c_str());
+        return 1;
+    }
     std::printf("program %s, %s before: %g\n", params.currentSigfile().programName.c_str(), knob.toRawUTF8(), before->value);
     params.setKnobForTools(knob.toStdString(), value);
     pump(800);
-    save(*ed, dir.getChildFile("live_param_" + knob + ".png"));
-    proc.getLink().requestSigfile();
+    h.save(dir.getChildFile("live_param_" + knob + ".png"));
+    h.proc.getLink().requestSigfile();
     pump(4000);
     auto* after = params.currentSigfile().findKnob(knob.toStdString());
     std::printf("%s read back from unit: %g\n", knob.toRawUTF8(), after ? after->value : -999.0);
-    ed->removeFromDesktop();
     return 0;
 }
 
-// LCD check (read-only): H7600Snapshot <out-dir> --lcd <seconds>
-static int lcdOnly(const juce::File& dir, int seconds)
+int lcdOnly(const juce::File& dir, int seconds)
 {
-    H7600ControlProcessor proc;
-    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
-    auto* editor = dynamic_cast<H7600ControlEditor*>(ed.get());
-    ed->setSize(1320, 820);
-    ed->addToDesktop(0);
-    ed->setVisible(true);
+    Harness h(true);
     pump(3000); // connect + initial program read
     int dumps = 0;
-    auto& link = proc.getLink();
+    auto& link = h.proc.getLink();
     auto prev = link.onScreen;
     link.onScreen = [&dumps, prev](const h7600::ScreenDump& d) { ++dumps; if (prev) prev(d); };
-    editor->showPageForTools(2);
+    h.ed->showPage(Page::Lcd);
     pump(seconds * 1000);
     std::printf("screen dumps in %d s with the LCD tab open and no activity: %d\n", seconds, dumps);
-    save(*ed, dir.getChildFile("live_lcd.png"));
-    ed->removeFromDesktop();
+    h.save(dir.getChildFile("live_lcd.png"));
     return 0;
 }
+} // namespace
 
 int main(int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
-    if (argc > 3 && juce::String(argv[2]) == "--lcd")
-        return lcdOnly(juce::File(juce::String(argv[1])), juce::String(argv[3]).getIntValue());
-    if (argc > 4 && juce::String(argv[2]) == "--param")
-        return liveParam(juce::File(juce::String(argv[1])), argv[3], juce::String(argv[4]).getDoubleValue());
-    if (argc > 2 && juce::String(argv[2]) == "--live")
-    {
-        juce::StringArray nums;
-        for (int i = 3; i < argc; ++i) nums.add(argv[i]);
-        return live(juce::File(juce::String(argv[1])), nums);
-    }
-    setenv("H7600_NO_AUTOCONNECT", "1", 1);
-    juce::File dir(argc > 1 ? juce::String(argv[1]) : juce::File::getCurrentWorkingDirectory().getFullPathName());
+    juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
+                            : juce::File::getCurrentWorkingDirectory());
     dir.createDirectory();
+    const juce::String mode = argc > 2 ? argv[2] : "";
 
-    H7600ControlProcessor proc;
-    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
-    ed->setSize(1320, 820);
-    ed->addToDesktop(0);
-    ed->setVisible(true);
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(200);
-    save(*ed, dir.getChildFile("browser_all.png"));
-
-    auto* editor = dynamic_cast<H7600ControlEditor*>(ed.get());
-    editor->getBrowser().setSearchText("ambience");
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(200);
-    save(*ed, dir.getChildFile("browser_search_ambience.png"));
-    ed->removeFromDesktop();
-    return 0;
+    if (mode == "--screenshots")
+        return screenshots(dir, argc > 3 ? argv[3] : "canyon");
+    if (mode == "--fixtures" && argc > 3)
+        return fixtures(dir, juce::File::getCurrentWorkingDirectory().getChildFile(argv[3]),
+                        argc > 4 ? argv[4] : "sigfile_quick_0a_ducked_delays.syx", argc > 5 ? argv[5] : "canyon");
+    if (mode == "--lcd" && argc > 3)
+        return lcdOnly(dir, juce::String(argv[3]).getIntValue());
+    if (mode == "--param" && argc > 4)
+        return liveParam(dir, argv[3], juce::String(argv[4]).getDoubleValue());
+    if (mode == "--live")
+    {
+        juce::StringArray numbers;
+        for (int i = 3; i < argc; ++i) numbers.add(argv[i]);
+        return live(dir, numbers);
+    }
+    if (mode.isNotEmpty())
+    {
+        std::printf("usage: H7600Snapshot <out-dir> [--screenshots [search] | --fixtures <dir> [sigfile] [search] | --live <n>... | --param <knob> <value> | --lcd <seconds>]\n");
+        return 2;
+    }
+    return offline(dir);
 }

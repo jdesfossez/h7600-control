@@ -16,7 +16,6 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     addAndMakeVisible(deviceBox);
 
     idSlider.setRange(0, 127, 1);
-    idSlider.setTextValueSuffix("");
     idSlider.setValue(link.getDeviceId(), juce::dontSendNotification);
     idSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 26);
     idSlider.onValueChange = [this] { owner.getLink().setDeviceId((int) idSlider.getValue()); };
@@ -34,9 +33,9 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
         t->setWantsKeyboardFocus(false);
         addAndMakeVisible(*t);
     }
-    browseTab.onClick = [this] { showPage(0); };
-    paramsTab.onClick = [this] { showPage(1); };
-    lcdTab.onClick = [this] { showPage(2); };
+    browseTab.onClick = [this] { showPage(Page::Browse); };
+    paramsTab.onClick = [this] { showPage(Page::Parameters); };
+    lcdTab.onClick = [this] { showPage(Page::Lcd); };
     lcdMirror.requestScreen = [this] { return owner.getLink().requestScreen(); };
     addChildComponent(lcdMirror);
 
@@ -59,7 +58,7 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     link.onScreenMayChange = [this] { lcdMirror.noteActivity(); };
 
     refreshDevices();
-    if (! link.isOpen() && ! juce::SystemStats::getEnvironmentVariable("H7600_NO_AUTOCONNECT", {}).isNotEmpty())
+    if (! link.isOpen() && owner.shouldAutoConnect())
     {
         auto devices = H7600Link::availableDevices();
         if (devices.contains("UM-ONE")) owner.connect("UM-ONE");
@@ -72,7 +71,7 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     setResizable(true, true);
     setResizeLimits(1000, 640, 2400, 1600);
     setSize(1320, 820);
-    showPage(0);
+    showPage(Page::Browse);
 }
 
 H7600ControlEditor::~H7600ControlEditor()
@@ -81,22 +80,21 @@ H7600ControlEditor::~H7600ControlEditor()
     link.onStatus = nullptr;
     link.onSigfile = nullptr;
     link.onParamChange = nullptr;
-    link.onKeys = nullptr;
     link.onConnectionChanged = nullptr;
     link.onScreen = nullptr;
     link.onScreenMayChange = nullptr;
     setLookAndFeel(nullptr);
 }
 
-void H7600ControlEditor::showPage(int page)
+void H7600ControlEditor::showPage(Page page)
 {
-    browser.setVisible(page == 0);
-    params.setVisible(page == 1);
-    lcdMirror.setVisible(page == 2);
-    lcdTab.setToggleState(page == 2, juce::dontSendNotification);
-    browseTab.setToggleState(page == 0, juce::dontSendNotification);
-    paramsTab.setToggleState(page == 1, juce::dontSendNotification);
-    if (page == 0) browser.focusSearch();
+    browser.setVisible(page == Page::Browse);
+    params.setVisible(page == Page::Parameters);
+    lcdMirror.setVisible(page == Page::Lcd);
+    browseTab.setToggleState(page == Page::Browse, juce::dontSendNotification);
+    paramsTab.setToggleState(page == Page::Parameters, juce::dontSendNotification);
+    lcdTab.setToggleState(page == Page::Lcd, juce::dontSendNotification);
+    if (page == Page::Browse) browser.focusSearch();
 }
 
 void H7600ControlEditor::setStatus(const juce::String& s)

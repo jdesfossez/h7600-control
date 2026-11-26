@@ -130,6 +130,63 @@ std::optional<Knob> knobFrom(const SigEntry& e)
     }
     return std::nullopt;
 }
+// Applies a printf-style format that comes from the unit. Only one numeric
+// conversion (%[-+ #0][width][.precision] f/F/e/E/g/G, or d/i) is passed to
+// snprintf, with a spec rebuilt from validated characters; "%%" becomes "%".
+// Anything else is copied as text, and an unusable conversion shows the plain
+// number, so a malformed format can never reach printf.
+std::string formatValue(const std::string& format, double value)
+{
+    std::string out;
+    bool converted = false;
+    for (std::size_t i = 0; i < format.size(); ++i)
+    {
+        if (format[i] != '%')
+        {
+            out += format[i];
+            continue;
+        }
+        if (i + 1 < format.size() && format[i + 1] == '%')
+        {
+            out += '%';
+            ++i;
+            continue;
+        }
+        if (converted)
+        {
+            out += '%';
+            continue;
+        }
+        converted = true;
+        std::size_t j = i + 1;
+        std::string spec = "%";
+        while (j < format.size() && std::string_view("-+ #0").find(format[j]) != std::string_view::npos)
+            spec += format[j++];
+        std::size_t widthStart = j;
+        while (j < format.size() && std::isdigit(static_cast<unsigned char>(format[j])))
+            spec += format[j++];
+        bool ok = j - widthStart <= 3;
+        if (j < format.size() && format[j] == '.')
+        {
+            spec += format[j++];
+            std::size_t precStart = j;
+            while (j < format.size() && std::isdigit(static_cast<unsigned char>(format[j])))
+                spec += format[j++];
+            ok = ok && j - precStart <= 2;
+        }
+        const char conv = j < format.size() ? format[j] : '\0';
+        char buf[96];
+        if (ok && std::string_view("fFeEgG").find(conv) != std::string_view::npos)
+            std::snprintf(buf, sizeof buf, (spec + conv).c_str(), value);
+        else if (ok && (conv == 'd' || conv == 'i'))
+            std::snprintf(buf, sizeof buf, (spec + "lld").c_str(), std::llround(value));
+        else
+            std::snprintf(buf, sizeof buf, "%g", value);
+        out += buf;
+        i = conv == '\0' ? j - 1 : j;
+    }
+    return out;
+}
 } // namespace
 
 std::string Knob::paramId() const { return paramIdForModule(moduleIndex); }
@@ -152,9 +209,7 @@ std::string Knob::displayValue() const
         auto pos = format.find("%s");
         return pos == std::string::npos ? opt : format.substr(0, pos) + opt + format.substr(pos + 2);
     }
-    char buf[128];
-    std::snprintf(buf, sizeof buf, format.c_str(), value);
-    return buf;
+    return formatValue(format, value);
 }
 
 const Knob* Sigfile::findKnob(std::string_view n) const

@@ -40,13 +40,18 @@ public:
     H7600Link& getLink() { return link; }
     const h7600::Catalog& getCatalog() const { return catalog; }
     UserStore& getUserStore() { return userStore; }
-    /// Opens the stored device, defaulting to the first available one.
+    /// Opens the MIDI interface with this name (and keeps retrying if it goes away).
     void connect(const juce::String& deviceName);
+    /// Whether a new editor connects to a MIDI interface by itself (UM-ONE first,
+    /// else the first one found) when none is open. Off for offline snapshots.
+    void setAutoConnect(bool on) { autoConnect = on; }
+    bool shouldAutoConnect() const { return autoConnect; }
 
 private:
     static h7600::Catalog loadCatalog();
     H7600Link link;
     h7600::Catalog catalog;
     UserStore userStore;
+    bool autoConnect = true;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(H7600ControlProcessor)
 };

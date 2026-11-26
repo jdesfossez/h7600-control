@@ -18,14 +18,16 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    enum class Page { Browse, Parameters, Lcd };
+    void showPage(Page);
+
+    // For the snapshot tool.
     BrowserView& getBrowser() { return browser; }
-    void showPageForTools(int p) { showPage(p); }
     ParamsView& getParams() { return params; }
     juce::String getStatusText() const { return statusText; }
 
 private:
     void refreshDevices();
-    void showPage(int page);
     void setStatus(const juce::String&);
     void showSigfile(const h7600::Sigfile&);
     void connectionChanged();

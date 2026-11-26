@@ -163,3 +163,26 @@ TEST_CASE("Ducked Delays: SKNOB3 delay values")
     CHECK(d1->displayValue() == "delay1  :  300 ms"); // LCD shows 300 ms
     CHECK(d1->max == 2000);
 }
+
+// Formats come from the unit: anything but one numeric conversion must not
+// reach printf (a stray %s or %n would be undefined behaviour).
+TEST_CASE("Knob formats are applied safely")
+{
+    Knob k;
+    k.kind = KnobKind::PercentKnob;
+    k.value = 42.5;
+    k.format = "wet level: %3.0f %%";
+    CHECK(k.displayValue() == "wet level:  42 %");
+    k.format = "rate1:% 6.2f Hz";
+    CHECK(k.displayValue() == "rate1: 42.50 Hz");
+    k.format = "count: %d";
+    CHECK(k.displayValue() == "count: 43");
+    k.format = "bad: %s";
+    CHECK(k.displayValue() == "bad: 42.5");
+    k.format = "two: %f %f %n";
+    CHECK(k.displayValue() == "two: 42.500000 %f %n");
+    k.format = "no conversion";
+    CHECK(k.displayValue() == "no conversion");
+    k.format = "huge: %999999999.0f";
+    CHECK(k.displayValue() == "huge: 42.5");
+}
