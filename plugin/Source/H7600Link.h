@@ -24,6 +24,15 @@ public:
     void setDeviceId(int id) { deviceId = static_cast<std::uint8_t>(juce::jlimit(0, 127, id)); }
     int getDeviceId() const { return deviceId; }
 
+    /// MIDI channel 0..15 used for Program Change.
+    void setMidiChannel(int ch) { midiChannel = juce::jlimit(0, 15, ch); }
+    int getMidiChannel() const { return midiChannel; }
+
+    /// Loads program `number` at run time: SysEx bank change + Program Change.
+    /// Needs SETUP > MIDI > "MIDI map" = none on the unit. The sigfile is then
+    /// requested to confirm which program actually loaded.
+    void loadProgram(int number);
+
     /// Read-only: asks for the current program's quick sigfile.
     void requestSigfile();
     /// Run-time parameter change (not saved on the unit).
@@ -48,6 +57,7 @@ private:
     std::unique_ptr<juce::MidiOutput> output;
     juce::String deviceName;
     std::uint8_t deviceId = 1;
+    int midiChannel = 0;
     h7600::RequestTracker tracker;
     juce::WeakReference<H7600Link>::Master masterReference;
     friend class juce::WeakReference<H7600Link>;

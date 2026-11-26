@@ -2,6 +2,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "H7600Link.h"
+#include "UserStore.h"
+#include "h7600/PresetCatalog.h"
 
 /// No audio processing: the plugin is a remote control for the hardware.
 /// Audio passes through untouched.
@@ -36,10 +38,15 @@ public:
     void setStateInformation(const void*, int) override;
 
     H7600Link& getLink() { return link; }
+    const h7600::Catalog& getCatalog() const { return catalog; }
+    UserStore& getUserStore() { return userStore; }
     /// Opens the stored device, defaulting to the first available one.
     void connect(const juce::String& deviceName);
 
 private:
+    static h7600::Catalog loadCatalog();
     H7600Link link;
+    h7600::Catalog catalog;
+    UserStore userStore;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(H7600ControlProcessor)
 };

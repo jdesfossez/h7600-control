@@ -82,6 +82,20 @@ void H7600Link::requestSigfile()
     status("Requesting sigfile...");
 }
 
+void H7600Link::loadProgram(int number)
+{
+    if (! isOpen()) { status("Not connected"); return; }
+    for (auto& m : h7600::makeProgramSelect(deviceId, midiChannel, number))
+        send(m);
+    status("Loading " + juce::String(number) + "...");
+    juce::WeakReference<H7600Link> weak(this);
+    juce::Timer::callAfterDelay(1200, [weak]
+    {
+        if (auto* self = weak.get())
+            self->requestSigfile();
+    });
+}
+
 void H7600Link::setParameter(const h7600::Knob& knob, const juce::String& value)
 {
     if (! isOpen()) return;
