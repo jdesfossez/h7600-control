@@ -97,6 +97,140 @@ XrayView::XrayView()
     addAndMakeVisible(inspectorView);
     setMode(Mode::AudioAndControl);
     problem = "Read a program from the unit to see its structure.";
+
+    for (auto* b : { &editBtn, &undoBtn, &redoBtn, &addBtn, &delBtn, &revertBtn, &runBtn })
+    {
+        b->setWantsKeyboardFocus(false);
+        addChildComponent(*b);
+    }
+    editBtn.setVisible(true);
+    editBtn.setTooltip("Edit a copy of this program on the Mac. The unit only changes when you press Run on unit.");
+    editBtn.onClick = [this] { if (editor) stopEditing(); else startEditing(); };
+    undoBtn.onClick = [this] { if (editor && editor->undo()) editsChanged(); };
+    redoBtn.onClick = [this] { if (editor && editor->redo()) editsChanged(); };
+    revertBtn.onClick = [this] { if (editor) { editor->revert(); editsChanged(); } };
+    addBtn.onClick = [this] { addModuleMenu(); };
+    delBtn.onClick = [this]
+    {
+        if (editor && selected > 0 && editor->remove((std::size_t) selected)) { selected = -1; editsChanged(); }
+    };
+    runBtn.setColour(juce::TextButton::buttonColourId, theme::red.darker(0.3f));
+    runBtn.onClick = [this] { confirmRun(); };
+    editPanel.onEdited = [this] { editsChanged(); };
+    editView.setViewedComponent(&editPanel, false);
+    editView.setScrollBarsShown(true, false);
+    addChildComponent(editView);
+}
+
+void XrayView::startEditing()
+{
+    if (! patch || ! db) return;
+    editor = std::make_unique<h7600::PatchEditor>(*db, *patch);
+    editNote = "Editing a copy on this Mac. The unit is unchanged until Run on unit.";
+    editsChanged();
+    resized();
+}
+
+void XrayView::stopEditing()
+{
+    if (editor && editor->modified())
+    {
+        juce::AlertWindow::showOkCancelBox(juce::MessageBoxIconType::QuestionIcon, "Stop editing",
+            "Discard the edits made to this copy? The unit is not affected either way.", "Discard", "Keep editing", nullptr,
+            juce::ModalCallbackFunction::create([this](int ok)
+            {
+                if (! ok) return;
+                editor.reset();
+                editNote.clear();
+                showSigfile(sigfile);
+                resized();
+            }));
+        return;
+    }
+    editor.reset();
+    editNote.clear();
+    showSigfile(sigfile);
+    resized();
+}
+
+void XrayView::editsChanged()
+{
+    if (! editor) return;
+    patch = editor->patch();
+    rebuild();
+    updateEditButtons();
+}
+
+void XrayView::updateEditButtons()
+{
+    const bool on = editor != nullptr;
+    editBtn.setButtonText(on ? "Stop editing" : "Edit a copy");
+    editBtn.setEnabled(on || (patch && db));
+    for (auto* b : { &undoBtn, &redoBtn, &addBtn, &delBtn, &revertBtn, &runBtn })
+        b->setVisible(on);
+    inspectorView.setVisible(! on);
+    editView.setVisible(on);
+    if (! on) return;
+    undoBtn.setEnabled(editor->canUndo());
+    redoBtn.setEnabled(editor->canRedo());
+    revertBtn.setEnabled(editor->modified());
+    delBtn.setEnabled(selected > 0 && selected < (int) editor->patch().modules.size() - 1);
+    runBtn.setEnabled(! h7600::hasErrors(editor->issues()));
+}
+
+void XrayView::addModuleMenu()
+{
+    if (! editor || ! db) return;
+    juce::PopupMenu menu;
+    std::vector<std::string> types;
+    for (auto& cls : db->classes())
+    {
+        if (cls == "SYSTEM") continue; // HEAD and TAIL variants
+        juce::PopupMenu sub;
+        for (auto& m : db->modules())
+            if (m.className == cls)
+            {
+                types.push_back(m.name);
+                sub.addItem((int) types.size(), juce::String(m.name));
+            }
+        menu.addSubMenu(juce::String(cls).toLowerCase(), sub);
+    }
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addBtn), [this, types](int r)
+    {
+        if (r <= 0 || ! editor) return;
+        if (auto idx = editor->add(types[(std::size_t) r - 1]))
+        {
+            selected = (int) *idx;
+            editsChanged();
+        }
+    });
+}
+
+void XrayView::confirmRun()
+{
+    if (! editor) return;
+    auto issues = editor->issues();
+    if (h7600::hasErrors(issues)) return;
+    juce::AlertWindow::showOkCancelBox(juce::MessageBoxIconType::WarningIcon, "Run on the unit",
+        "The H7600 will replace the program it is running with this edited copy.\n\n"
+        "Nothing is saved on the unit: loading any program brings the stored ones back. "
+        "A copy of what is sent is kept on this Mac.", "Run on unit", "Cancel", nullptr,
+        juce::ModalCallbackFunction::create([this](int ok)
+        {
+            if (! ok || ! editor || ! onRun) return;
+            editNote = "Sending to the unit...";
+            runBtn.setEnabled(false);
+            repaint();
+            onRun(editor->text(), editor->patch().programName());
+        }));
+}
+
+void XrayView::runFinished(bool ok, const juce::String& message)
+{
+    editNote = message;
+    if (ok && editor) editor->markRun();
+    updateEditButtons();
+    repaint();
 }
 
 void XrayView::setMode(Mode m)
@@ -117,6 +251,13 @@ void XrayView::setModuleDb(const h7600::ModuleDb* d)
 
 void XrayView::showSigfile(const h7600::Sigfile& sf)
 {
+    if (editor)
+    {
+        // Keep showing the edited copy; remember what the unit runs now.
+        sigfile = sf;
+        repaint();
+        return;
+    }
     const bool sameProgram = sf.text.size() > 0 && sf.programName == sigfile.programName;
     const auto keep = selected >= 0 && patch && selected < (int) patch->modules.size() ? patch->modules[(std::size_t) selected].name() : std::string();
     sigfile = sf;
@@ -142,6 +283,7 @@ void XrayView::rebuild()
     if (patch && selected >= (int) patch->modules.size()) selected = -1;
     layoutGraph();
     buildInspector();
+    updateEditButtons();
     repaint();
 }
 
@@ -191,7 +333,32 @@ void XrayView::resized()
         k->setBounds(keys.removeFromLeft(130));
         keys.removeFromLeft(16);
     }
-    inspectorView.setBounds(inspector.reduced(16).withTrimmedBottom(150));
+    auto ir = inspector.reduced(16).withTrimmedBottom(150);
+    auto bar = ir.removeFromTop(32);
+    if (editor)
+    {
+        editBtn.setBounds(bar.removeFromLeft(bar.getWidth() / 2 - 3));
+        bar.removeFromLeft(6);
+        revertBtn.setBounds(bar);
+        ir.removeFromTop(6);
+        auto row = ir.removeFromTop(30);
+        const int w = (row.getWidth() - 3 * 6) / 4;
+        for (auto* b : { &undoBtn, &redoBtn, &addBtn, &delBtn })
+        {
+            b->setBounds(row.removeFromLeft(w));
+            row.removeFromLeft(6);
+        }
+        ir.removeFromTop(6);
+        runBtn.setBounds(ir.removeFromTop(32));
+        ir.removeFromTop(8);
+    }
+    else
+    {
+        editBtn.setBounds(bar.removeFromLeft(140));
+        ir.removeFromTop(8);
+    }
+    inspectorView.setBounds(ir);
+    editView.setBounds(ir);
     layoutGraph();
     layoutInspector();
 }
@@ -274,6 +441,14 @@ void XrayView::paint(juce::Graphics& g)
     g.drawText(title, head, juce::Justification::centredLeft);
     if (patch && selected >= 0)
         g.drawText(juce::String(patch->modules[(std::size_t) selected].name()), head, juce::Justification::centredRight);
+    else if (editor)
+        g.drawText(editor->modified() ? "EDITED COPY *" : "EDITED COPY", head, juce::Justification::centredRight);
+    if (editNote.isNotEmpty())
+    {
+        g.setColour(theme::lcdInk);
+        g.setFont(theme::lcdFont(14.0f));
+        g.drawText(editNote, lcd.reduced(24, 8).removeFromBottom(18), juce::Justification::centredLeft);
+    }
     g.setColour(theme::lcdDim);
     g.drawHorizontalLine(head.getBottom() + 2, (float) head.getX(), (float) head.getRight());
 
@@ -409,6 +584,7 @@ void XrayView::select(int module)
 {
     selected = module;
     buildInspector();
+    updateEditButtons();
     repaint();
 }
 
@@ -421,6 +597,13 @@ void XrayView::log(const juce::String& line)
 
 void XrayView::buildInspector()
 {
+    if (editor)
+    {
+        editPanel.setSize(juce::jmax(10, editView.getWidth() - 12), 10);
+        editPanel.show(editor.get(), db, selected);
+        editPanel.setSize(juce::jmax(10, editView.getWidth() - 12), juce::jmax(10, editPanel.preferredHeight()));
+        return;
+    }
     knobControls.clear();
     inspectorLines.clear();
     if (! patch || selected < 0 || selected >= (int) patch->modules.size())

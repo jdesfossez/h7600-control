@@ -66,6 +66,7 @@ bool H7600Link::open(const juce::String& name)
 
 void H7600Link::close()
 {
+    run.reset();
     dbFetching = false;
     sentValues.clear();
     verifyAt = 0;
@@ -122,6 +123,7 @@ void H7600Link::requestSigfile()
         [this](h7600::Code)
         {
             sigfilePending = false;
+            if (run) finishRun(false, "The unit did not answer after the program was sent");
             responding = false;
             status("The H7600 is not answering. Check MIDI cables, SETUP > MIDI (MIDI enabled, system exclusive on) and the device ID.");
             if (onConnectionChanged) onConnectionChanged();
@@ -132,6 +134,22 @@ void H7600Link::requestSigfile()
 void H7600Link::deliverSigfile(const h7600::Sigfile& sf)
 {
     lastSigfileEntries = (int) sf.entries.size();
+    if (run && run->verifyAt == 0)
+    {
+        auto norm = [](std::string s)
+        {
+            std::string o;
+            for (char c : s)
+                if (c != '\r' && c != '\0') o += c;
+            while (! o.empty() && (o.back() == '\n' || o.back() == ' ')) o.pop_back();
+            while (! o.empty() && o.front() == '\n') o.erase(o.begin());
+            return o;
+        };
+        const bool same = norm(sf.text) == norm(run->text);
+        finishRun(same, same ? juce::String("The unit runs the edited program (not saved on the unit)")
+                             : juce::String("The unit runs something else than what was sent (it may have rejected it): \"")
+                                   + juce::String(sf.programName) + "\" is loaded");
+    }
     if (verifyGeneration != setGeneration)
     {
         // The user moved a control while this was on its way: its values are stale.
@@ -151,6 +169,32 @@ void H7600Link::deliverSigfile(const h7600::Sigfile& sf)
         }
     }
     if (onSigfile) onSigfile(sf);
+}
+
+bool H7600Link::runSigfile(const std::string& text, std::function<void(bool, const juce::String&)> done)
+{
+    auto fail = [&](const juce::String& m) { if (done) done(false, m); return false; };
+    if (! isOpen()) return fail("Not connected");
+    if (dbFetching || run || sigfilePending) return fail("The unit is busy; try again in a moment");
+    h7600::Bytes frame;
+    try { frame = h7600::makeSigfileLoad(deviceId, text); }
+    catch (const std::exception& e) { return fail(e.what()); }
+    sender.clear();
+    sentValues.clear();
+    verifyAt = 0;
+    run = RunPending { text, std::move(done), nowMs() + 2500 };
+    send(frame);
+    status("Sent the edited program to the unit (run time only); reading it back...");
+    return true;
+}
+
+void H7600Link::finishRun(bool ok, const juce::String& msg)
+{
+    if (! run) return;
+    auto done = std::move(run->done);
+    run.reset();
+    status(msg);
+    if (done) done(ok, msg);
 }
 
 bool H7600Link::fetchModuleDatabase()
@@ -261,6 +305,15 @@ void H7600Link::handleFrame(const h7600::Frame& f)
                           || is(f, h7600::Code::ParamAck) || is(f, h7600::Code::SigfileDumpRemote);
     if (screenEvent && onScreenMayChange)
         onScreenMayChange();
+    if (run && (is(f, h7600::Code::Ok) || is(f, h7600::Code::Error)))
+    {
+        // Tech Note 34's answers to 0A (firmware 5.22 sent neither in our test).
+        if (is(f, h7600::Code::Error))
+            finishRun(false, "The unit rejected the program: " + juce::String(h7600::payloadText(f)));
+        else
+            run->verifyAt = nowMs() + 300;
+        return;
+    }
     if (sender.onFrame(f, nowMs()))
         return;
     if (tracker.onFrame(f))
@@ -307,6 +360,11 @@ void H7600Link::timerCallback()
     if (isOpen())
         if (auto m = sender.poll(now))
             send(*m);
+    if (run && run->verifyAt != 0 && now >= run->verifyAt && ! sigfilePending)
+    {
+        run->verifyAt = 0; // the next sigfile is the read-back
+        requestSigfile();
+    }
     if (! dbFetching) // the unit is deaf until the database has arrived
     {
         if (refreshAt != 0 && now >= refreshAt && sender.idle())

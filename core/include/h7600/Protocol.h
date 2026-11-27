@@ -35,7 +35,8 @@ enum class Code : std::uint8_t
     SetupWant = 0x07,       // -> SetupDump (0x16)
     SigfileDump = 0x08,     // WRITES/LOADS a program: never sent by this library
     SigfileWant = 0x09,     // -> SigfileDump (0x08), commented
-    SigfileDumpRemote = 0x0A, // reply to SigfileWantQuick (also a write when sent to the unit)
+    SigfileDumpRemote = 0x0A, // reply to SigfileWantQuick; sent to the unit it loads and runs the
+                              // sigfile as the current program (run time, not saved; see makeSigfileLoad)
     SigfileWantQuick = 0x0B,  // -> SigfileDumpRemote (0x0A), plain ASCII
     SigdbaseDump = 0x0C,    // reply to SigdbaseWant: the module database, plain ASCII
     Error = 0x0D,
@@ -111,6 +112,13 @@ Bytes makeProgramChange(int channel, int program);
 /// SysEx bank change then MIDI Program Change. Requires "MIDI map" = none.
 /// Verified on fw 5.22: bank 42 + PC 10 loads 4210, bank 5 + PC 13 loads 513.
 std::vector<Bytes> makeProgramSelect(std::uint8_t deviceId, int channel, int number);
+
+/// F0 1C 70 <dev> 0A <sigfile text> 00 F7: the unit compiles the sigfile and runs it in place of
+/// the current program. Run time only: nothing is saved, and loading any program brings the
+/// stored ones back. Tech Note 34 says the unit answers 00 (ok) or 0D (error text), but firmware
+/// 5.22 answered neither in our test, so read the program back (0B) to confirm.
+/// Throws std::invalid_argument for text that is not 7-bit printable ASCII (CR, LF, tab allowed).
+Bytes makeSigfileLoad(std::uint8_t deviceId, std::string_view sigfileText);
 
 // ---- Keypress echo ------------------------------------------------------------
 

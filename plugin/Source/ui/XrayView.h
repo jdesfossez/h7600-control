@@ -11,7 +11,9 @@
 #include "h7600/ModuleDb.h"
 #include "h7600/Patch.h"
 #include "h7600/Sigfile.h"
+#include "h7600/PatchEditor.h"
 #include "ParamsView.h"
+#include "PatchEditPanel.h"
 #include "Theme.h"
 
 class XrayView : public juce::Component
@@ -22,6 +24,14 @@ public:
     XrayView();
 
     std::function<void(const h7600::Knob&, double)> onChange;
+    /// "Run on unit" confirmed: send this sigfile with 0A (run time only) and call runFinished.
+    std::function<void(const std::string& text, const std::string& name)> onRun;
+    void runFinished(bool ok, const juce::String& message);
+    bool isEditing() const { return editor != nullptr; }
+    /// Tools: start editing / the editor.
+    void startEditing();
+    h7600::PatchEditor* getEditor() { return editor.get(); }
+    void editsChanged();
 
     void setModuleDb(const h7600::ModuleDb* db);
     void showSigfile(const h7600::Sigfile&);
@@ -77,6 +87,18 @@ private:
     juce::OwnedArray<ParamControl> knobControls;
     juce::StringArray inspectorLines; // painted by the content component
     juce::StringArray sentLog;
+
+    // Editing (a copy on the Mac; the unit changes only on "Run on unit")
+    void stopEditing();
+    void confirmRun();
+    void addModuleMenu();
+    void updateEditButtons();
+    std::unique_ptr<h7600::PatchEditor> editor;
+    juce::TextButton editBtn { "Edit a copy" }, undoBtn { "Undo" }, redoBtn { "Redo" }, addBtn { "Add module" },
+        delBtn { "Delete" }, revertBtn { "Revert" }, runBtn { "Run on unit" };
+    PatchEditPanel editPanel;
+    juce::Viewport editView;
+    juce::String editNote;
     struct Content;
     std::unique_ptr<juce::Component> contentPainter;
 };

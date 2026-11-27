@@ -122,6 +122,18 @@ int fixtures(const juce::File& dir, const juce::File& fixturesDir, const juce::S
     pump(200);
     h.save(dir.getChildFile("xray_control.png"));
     h.ed->getXray().setMode(XrayView::Mode::AudioAndControl);
+    // Edit mode, offline: add a highcut after the left input. Nothing is sent.
+    auto& xr = h.ed->getXray();
+    xr.startEditing();
+    if (auto* ed = xr.getEditor())
+        if (auto idx = ed->add("highcut"))
+        {
+            ed->connect(0, "in1", *idx, "in");
+            xr.editsChanged();
+            xr.selectModule(ed->patch().modules[*idx].name());
+            pump(300);
+            h.save(dir.getChildFile("xray_edit.png"));
+        }
     h.ed->showPage(Page::Lcd);
     if (auto d = h7600::parseScreenDump(*screen); d && link.onScreen)
         link.onScreen(*d);

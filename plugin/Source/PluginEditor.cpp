@@ -38,6 +38,16 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     lcdTab.onClick = [this] { showPage(Page::Lcd); };
     xrayTab.onClick = [this] { showPage(Page::Xray); };
     xray.onChange = [this](const h7600::Knob& k, double v) { owner.getLink().setParameter(k, v); };
+    xray.onRun = [this](const std::string& text, const std::string& name)
+    {
+        // Keep a copy of everything sent, on the Mac.
+        auto dir = ModuleDbStore::cacheFile().getParentDirectory().getChildFile("sent");
+        dir.createDirectory();
+        auto safeName = juce::File::createLegalFileName(juce::String(name).isEmpty() ? juce::String("program") : juce::String(name));
+        dir.getChildFile(juce::Time::getCurrentTime().formatted("%Y%m%d-%H%M%S_") + safeName + ".sig").replaceWithText(juce::String(text));
+        juce::Component::SafePointer<XrayView> safe(&xray);
+        owner.getLink().runSigfile(text, [safe](bool ok, const juce::String& msg) { if (safe) safe->runFinished(ok, msg); });
+    };
     addChildComponent(xray);
     lcdMirror.requestScreen = [this] { return owner.getLink().requestScreen(); };
     addChildComponent(lcdMirror);

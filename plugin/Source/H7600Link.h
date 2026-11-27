@@ -59,6 +59,12 @@ public:
     bool fetchModuleDatabase();
     bool isFetchingDatabase() const { return dbFetching; }
 
+    /// Sends an edited sigfile with 0A: the unit compiles it and runs it in place of the current
+    /// program (run time only, nothing saved). Then reads the program back (0B) and calls `done`
+    /// with whether the unit runs exactly what was sent. The only 0A path in the app; the UI calls
+    /// it after an explicit confirmation.
+    bool runSigfile(const std::string& text, std::function<void(bool ok, const juce::String& message)> done);
+
     static juce::StringArray availableDevices();
 
     std::function<void(const juce::String&)> onStatus;
@@ -101,6 +107,15 @@ private:
     std::vector<std::pair<std::string, std::string>> sentValues; // latest per param id
     std::int64_t verifyAt = 0;
     int setGeneration = 0, verifyGeneration = -1;
+    // Sigfile run (0A) waiting for its read-back.
+    struct RunPending
+    {
+        std::string text;
+        std::function<void(bool, const juce::String&)> done;
+        std::int64_t verifyAt = 0;
+    };
+    std::optional<RunPending> run;
+    void finishRun(bool ok, const juce::String& msg);
     // Module database download.
     bool dbFetching = false;
     std::int64_t dbBytes = 0, dbLastProgress = 0;

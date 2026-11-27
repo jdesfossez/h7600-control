@@ -104,6 +104,18 @@ std::optional<Code> replyCodeFor(Code request)
     }
 }
 
+Bytes makeSigfileLoad(std::uint8_t deviceId, std::string_view text)
+{
+    if (text.empty())
+        throw std::invalid_argument("empty sigfile");
+    for (unsigned char c : text)
+        if (c >= 0x7F || (c < 0x20 && c != '\r' && c != '\n' && c != '\t'))
+            throw std::invalid_argument("sigfile text must be printable 7-bit ASCII");
+    Bytes payload(text.begin(), text.end());
+    payload.push_back(0x00); // the unit's own sigfiles end with a NUL
+    return buildFrame(deviceId, Code::SigfileDumpRemote, payload);
+}
+
 std::string paramIdForModule(int moduleIndex)
 {
     if (moduleIndex < 1 || moduleIndex > 0xFF)

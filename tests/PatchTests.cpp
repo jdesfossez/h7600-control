@@ -4,6 +4,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+
 using namespace h7600;
 
 namespace
@@ -374,4 +376,65 @@ TEST_CASE("Patch graph: columns by signal depth, IN and OUT, control lanes")
     CHECK(fb == 1);
     CHECK(moduleAbbrev("MODDELAY") == "mdl");
     CHECK(moduleAbbrev("C_ADDER") == "cad");
+}
+
+#include "h7600/PatchEditor.h"
+#include "h7600/Protocol.h"
+
+TEST_CASE("Patch editor: edits, undo, redo, revert")
+{
+    PatchEditor ed(testDb(), testPatch());
+    CHECK_FALSE(ed.modified());
+    CHECK_FALSE(ed.canUndo());
+
+    auto idx = ed.add("gain");
+    REQUIRE(idx);
+    CHECK(ed.patch().modules[*idx].name() == "gain1");
+    CHECK(ed.patch().modules.back().type == "TAIL");
+    CHECK(ed.connect(3, "out", *idx, "in"));              // g1 -> gain1
+    CHECK_FALSE(ed.connect(2, "out", *idx, "in"));        // a knob cannot feed an audio input
+    CHECK(ed.connect(*idx, "out", 0, "out1"));            // gain1 -> OUT left
+    CHECK(ed.setField(*idx, "level", "-6"));
+    CHECK(ed.patch().modules[*idx].field("level")->token == "-6");
+    CHECK_FALSE(ed.setField(*idx, "level", "-6"));        // no change, no undo step
+    CHECK(ed.issues().empty());
+    CHECK(ed.modified());
+
+    auto sources = ed.sourcesFor(*idx, "in");
+    CHECK(std::find(sources.begin(), sources.end(), "adc-in1") != sources.end());
+    CHECK(std::find(sources.begin(), sources.end(), "adc-null") == sources.end());
+    CHECK(std::find(sources.begin(), sources.end(), "lvl-out") == sources.end());
+
+    CHECK(ed.unplug(*idx, "in"));
+    CHECK(ed.patch().modules[*idx].field("in")->token == "adc-null");
+    CHECK(ed.undo());
+    CHECK(ed.patch().modules[*idx].field("in")->token == "g1-out");
+    CHECK(ed.redo());
+    CHECK(ed.patch().modules[*idx].field("in")->token == "adc-null");
+
+    CHECK_FALSE(ed.remove(0)); // HEAD stays
+    CHECK_FALSE(ed.remove(ed.patch().modules.size() - 1)); // TAIL stays
+    CHECK(ed.rename(2, "volume"));
+    CHECK(ed.patch().modules[3].field("level")->token == "volume-out");
+    CHECK(ed.setField(0, "obj_description", "Edited"));
+    CHECK(ed.patch().programName() == "Edited");
+
+    ed.revert();
+    CHECK_FALSE(ed.modified());
+    CHECK(ed.undo()); // revert is undoable
+    CHECK(ed.modified());
+    while (ed.undo()) {}
+    CHECK_FALSE(ed.modified());
+}
+
+TEST_CASE("Sigfile load frame (0A): ASCII only, NUL before F7")
+{
+    auto f = makeSigfileLoad(1, "\r\nTAIL t\r\n");
+    CHECK(f == Bytes { 0xF0, 0x1C, 0x70, 0x01, 0x0A, '\r', '\n', 'T', 'A', 'I', 'L', ' ', 't', '\r', '\n', 0x00, 0xF7 });
+    CHECK_THROWS(makeSigfileLoad(1, ""));
+    CHECK_THROWS(makeSigfileLoad(1, std::string("TAIL \xF7", 6)));
+    CHECK_THROWS(makeSigfileLoad(1, std::string("TAIL \x01", 6)));
+    // makeWant still refuses everything that is not a read.
+    CHECK_THROWS(makeWant(1, Code::SigfileDumpRemote));
+    CHECK_THROWS(makeWant(1, Code::SigfileDump));
 }

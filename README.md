@@ -29,6 +29,14 @@ Everything it sends is run time only. It never saves, overwrites or uploads anyt
   math) in lanes under what they steer, feedback as dotted arcs; "aud only", "aud+ctrl" and
   "ctrl only" views. Click a module to see its inputs and settings and a control for every knob
   that steers it, directly or through control math (changes are sent live, run time only).
+* **Editing** (first version, X-ray tab): "Edit a copy" edits the program on your computer:
+  module settings and unconnected control values, add a module from the database (by class) or
+  delete one, connect or unplug inputs, rename, undo/redo. Errors (wrong connection kinds, values
+  out of range, duplicate names, more than two inputs or outputs) are listed and block sending.
+  **Run on unit** sends the edited sigfile (`0A`): the unit runs it in place of the current
+  program, nothing is saved on it, and loading any program brings the stored ones back. The app
+  reads the program back to confirm and keeps every sent sigfile in
+  `~/Library/Application Support/H7600 Control/sent`.
 * **LCD**: a mirror of the unit's 240 x 64 screen, refreshed after activity.
 * Follows program changes made on the front panel, and recovers when the unit is power-cycled or
   the MIDI interface is unplugged and plugged back in.
@@ -47,7 +55,11 @@ Written while the unit was offline (2026-11-27), tested only against captured me
 
 * fetching the module database from the app (progress, nothing else sent meanwhile);
 * parameter sends at up to about 140 per second with several waiting for acks, and the read-back
-  after a change (and its "kept a different value" message).
+  after a change (and its "kept a different value" message);
+* Run on unit from the editor: the `0A` frame the app builds (the rack test sent the same format
+  by hand), the read-back comparison, and what the unit shows for a sigfile it rejects (5.22 sent
+  neither `00` nor `0D` for a valid one); editing knobs, menus and text modules on the unit after a
+  run; adding modules other than HIGHCUT.
 
 ## Setting up the H7600
 
@@ -233,7 +245,10 @@ The reference is Eventide's Tech Note 34 (MIDI SysEx) and the H7600 Programming 
   it asks for one dump when it opens and one about 400 ms after anything that can change the screen.
 
 **Safety:** the core library has no builders for the codes that write the unit's memory (`08`,
-`0A`, `0F`, `11`, `13`, `15`, `16`), and `makeWant` rejects them. Key presses (`01`) can only be
+`0F`, `11`, `13`, `15`, `16`), and `makeWant` rejects them. The one exception to "read or tweak
+only" is `makeSigfileLoad` (`0A`), which runs an edited sigfile in place of the current program
+without saving it; the app sends it only from the X-ray editor's Run on unit button, after a
+confirmation, a validation with no errors and a copy saved on the computer. Key presses (`01`) can only be
 built for navigation keys (`SafeKey`: PROGRAM, 0-9, ENTER, SELECT, CXL). Value formats read from the
 unit are applied without passing them to `printf` unchecked.
 
