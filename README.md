@@ -165,9 +165,11 @@ at 2x without needing screen-recording permission:
 | `--param <knob> <value>` | changes a parameter | moves a control through the UI and reads the value back |
 | `--lcd <seconds>` | reads only | counts screen dumps while the LCD page sits idle |
 
-To refresh the README screenshots:
+The README screenshots were taken live with `--screenshots` (read-only). Without a unit, `--fixtures`
+renders the same pages from captured messages:
 
 ```bash
+build/plugin/H7600Snapshot_artefacts/Release/H7600Snapshot docs/screenshots --screenshots
 build/plugin/H7600Snapshot_artefacts/Release/H7600Snapshot docs/screenshots --fixtures tests/fixtures
 ```
 
