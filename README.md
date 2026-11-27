@@ -48,11 +48,28 @@ then pick the interface in the app's header. A Roland UM-ONE is selected automat
 
 ## Download
 
-Every push to `main` is built for macOS, Windows and Linux by
-[GitHub Actions](https://github.com/jdesfossez/h7600-control/actions/workflows/build.yml): open the
-latest successful run and download the `H7600-Control-<platform>` artifact. The builds are not
-signed: on macOS, right-click the app and choose Open the first time, or run
-`xattr -dr com.apple.quarantine "H7600 Control.app"`.
+Get the zip for your platform from the
+[latest release](https://github.com/jdesfossez/h7600-control/releases/latest). The macOS build is a
+universal binary (Apple silicon and Intel) with the standalone app, AU and VST3; Windows and Linux
+have the standalone app and VST3. Each zip has a short README with where to install each file.
+
+The builds are not signed or notarized. On macOS, right-click the app and choose Open the first
+time, or run `xattr -dr com.apple.quarantine "H7600 Control.app"` (same for the plugins).
+
+Builds of every push to `main` are also available as artifacts of the
+[Build workflow](https://github.com/jdesfossez/h7600-control/actions/workflows/build.yml).
+
+### Publishing a release
+
+Set the version in `CMakeLists.txt` (`project(... VERSION x.y.z)`), commit, then push a tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The Build workflow then builds and tests the three platforms and publishes a GitHub release with
+one zip per platform and notes generated from the commits.
 
 ## Building
 
@@ -196,11 +213,20 @@ pdftotext -layout H7600V522PresetsManual.pdf presets.txt
 python3 tools/parse_presets.py presets.txt resources/presets.json   # prints "75 banks, 1114 presets"
 ```
 
-## Third-party code and assets
+## License
 
-* [JUCE](https://juce.com) 8, used under the AGPLv3 / JUCE licence.
-* [Catch2](https://github.com/catchorg/Catch2) (BSL-1.0) and
-  [nlohmann/json](https://github.com/nlohmann/json) (MIT).
+The code in this repository is under the [MIT License](LICENSE).
+
+The plugins and app are built with [JUCE](https://juce.com) 8, used here under the
+[AGPLv3](https://www.gnu.org/licenses/agpl-3.0.html), so the released binaries as a whole are
+AGPLv3 (their full source is this repository plus JUCE). If you hold a commercial JUCE licence,
+your own builds are covered by that licence instead.
+
+Other third-party components:
+
+* [Catch2](https://github.com/catchorg/Catch2) (BSL-1.0, tests only),
+  [nlohmann/json](https://github.com/nlohmann/json) (MIT) and the Steinberg VST3 SDK bundled with
+  JUCE (MIT).
 * `resources/fonts/VT323-Regular.ttf`: VT323 by The VT323 Project Authors, from
   [google/fonts](https://github.com/google/fonts/tree/main/ofl/vt323), under the SIL Open Font
   License 1.1 (`resources/fonts/OFL.txt`). Used for the LCD-style text.

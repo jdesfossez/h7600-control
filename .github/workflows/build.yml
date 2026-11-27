@@ -1,8 +1,12 @@
 name: Build
 
+# Builds and tests on every push and pull request. Pushing a tag such as v0.1.0
+# also publishes a GitHub release with a zip per platform.
+
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -21,15 +25,19 @@ jobs:
           - name: macOS (AU, VST3, Standalone)
             os: macos-latest
             generator: Ninja
-            artefact: macOS
+            platform: macOS
+            # Universal binary: Apple silicon and Intel.
+            extra: '"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"'
           - name: Windows (VST3, Standalone)
             os: windows-latest
             generator: ""   # the newest Visual Studio on the runner
-            artefact: Windows
+            platform: Windows
+            extra: ""
           - name: Linux (VST3, Standalone)
             os: ubuntu-24.04
             generator: Ninja
-            artefact: Linux
+            platform: Linux
+            extra: ""
 
     steps:
       - uses: actions/checkout@v5
@@ -38,7 +46,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build pkg-config \
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config zip \
             libasound2-dev libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev \
             libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
             libgl1-mesa-dev
@@ -60,6 +68,7 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
+          ${{ matrix.extra }}
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -75,12 +84,53 @@ jobs:
           killall -9 AudioComponentRegistrar || true
           auval -v aufx H76c H7ct
 
-      - name: Upload plugins
+      # Zipped on the runner so executable bits and macOS bundles survive.
+      - name: Package
+        shell: bash
+        run: |
+          name="H7600-Control-${GITHUB_REF_NAME//\//-}-${{ matrix.platform }}"
+          [[ "$GITHUB_REF" == refs/tags/* ]] || name="H7600-Control-${{ matrix.platform }}"
+          stage="dist/$name"
+          mkdir -p "$stage"
+          cp -R build/plugin/H7600Control_artefacts/Release/{AU,VST3,Standalone} "$stage"/ 2>/dev/null || true
+          rm -f "$stage"/Standalone/*.pdb "$stage"/VST3/*.pdb
+          cp LICENSE "$stage/LICENSE.txt"
+          cp resources/fonts/OFL.txt "$stage/VT323-OFL.txt"
+          cp packaging/README.txt "$stage/README.txt"
+          cd dist
+          case "$RUNNER_OS" in
+            macOS)   ditto -c -k --keepParent "$name" "$name.zip" ;;
+            Windows) 7z a -tzip "$name.zip" "$name" > /dev/null ;;
+            *)       zip -qry "$name.zip" "$name" ;;
+          esac
+          echo "ZIP=dist/$name.zip" >> "$GITHUB_ENV"
+
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: H7600-Control-${{ matrix.artefact }}
-          path: |
-            build/plugin/H7600Control_artefacts/Release/AU
-            build/plugin/H7600Control_artefacts/Release/VST3
-            build/plugin/H7600Control_artefacts/Release/Standalone
+          name: H7600-Control-${{ matrix.platform }}
+          path: ${{ env.ZIP }}
           if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "H7600 Control $GITHUB_REF_NAME" \
+            --generate-notes
