@@ -27,7 +27,7 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     channelBox.onChange = [this] { owner.getLink().setMidiChannel(channelBox.getSelectedId() - 1); };
     addAndMakeVisible(channelBox);
 
-    for (auto* t : { &browseTab, &paramsTab, &lcdTab })
+    for (auto* t : { &browseTab, &paramsTab, &xrayTab, &lcdTab })
     {
         t->setClickingTogglesState(false);
         t->setWantsKeyboardFocus(false);
@@ -36,6 +36,9 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
     browseTab.onClick = [this] { showPage(Page::Browse); };
     paramsTab.onClick = [this] { showPage(Page::Parameters); };
     lcdTab.onClick = [this] { showPage(Page::Lcd); };
+    xrayTab.onClick = [this] { showPage(Page::Xray); };
+    xray.onChange = [this](const h7600::Knob& k, double v) { owner.getLink().setParameter(k, v); };
+    addChildComponent(xray);
     lcdMirror.requestScreen = [this] { return owner.getLink().requestScreen(); };
     addChildComponent(lcdMirror);
 
@@ -68,7 +71,7 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
 
     link.onStatus = [this](const juce::String& s) { setStatus(s); };
     link.onSigfile = [this](const h7600::Sigfile& sf) { showSigfile(sf); };
-    link.onParamChange = [this](const h7600::ParamChange& c) { params.applyFromUnit(c); };
+    link.onParamChange = [this](const h7600::ParamChange& c) { params.applyFromUnit(c); xray.applyFromUnit(c); };
     link.onConnectionChanged = [this] { connectionChanged(); };
     link.onScreen = [this](const h7600::ScreenDump& d) { lcdMirror.show(d); };
     link.onScreenMayChange = [this] { lcdMirror.noteActivity(); };
@@ -109,6 +112,8 @@ void H7600ControlEditor::showPage(Page page)
     browser.setVisible(page == Page::Browse);
     params.setVisible(page == Page::Parameters);
     lcdMirror.setVisible(page == Page::Lcd);
+    xray.setVisible(page == Page::Xray);
+    xrayTab.setToggleState(page == Page::Xray, juce::dontSendNotification);
     browseTab.setToggleState(page == Page::Browse, juce::dontSendNotification);
     paramsTab.setToggleState(page == Page::Parameters, juce::dontSendNotification);
     lcdTab.setToggleState(page == Page::Lcd, juce::dontSendNotification);
@@ -144,6 +149,7 @@ void H7600ControlEditor::connectionChanged()
 void H7600ControlEditor::databaseChanged()
 {
     params.setModuleDb(owner.getModuleDb().get());
+    xray.setModuleDb(owner.getModuleDb().get());
     params.setDatabaseStatus(owner.getModuleDb().describe());
 }
 
@@ -188,6 +194,7 @@ void H7600ControlEditor::showSigfile(const h7600::Sigfile& sf)
 {
     programName = sf.programName;
     params.showSigfile(sf);
+    xray.showSigfile(sf);
     if (pendingLoad >= 0)
     {
         // Confirm the load against the catalog name (the sigfile name can carry a suffix).
@@ -197,6 +204,7 @@ void H7600ControlEditor::showSigfile(const h7600::Sigfile& sf)
         if (ok)
         {
             browser.noteLoaded(pendingLoad);
+            xray.setProgramNumber(pendingLoad);
             setStatus("Loaded " + juce::String(pendingLoad) + " " + juce::String(p->name));
         }
         else
@@ -243,6 +251,8 @@ void H7600ControlEditor::resized()
     auto right = header.withSizeKeepingCentre(header.getWidth(), 32);
     lcdTab.setBounds(right.removeFromRight(70));
     right.removeFromRight(6);
+    xrayTab.setBounds(right.removeFromRight(80));
+    right.removeFromRight(6);
     paramsTab.setBounds(right.removeFromRight(110));
     right.removeFromRight(6);
     browseTab.setBounds(right.removeFromRight(90));
@@ -259,4 +269,5 @@ void H7600ControlEditor::resized()
     browser.setBounds(r);
     params.setBounds(r);
     lcdMirror.setBounds(r);
+    xray.setBounds(r);
 }

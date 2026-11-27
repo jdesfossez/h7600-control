@@ -105,6 +105,23 @@ int fixtures(const juce::File& dir, const juce::File& fixturesDir, const juce::S
     h.ed->showPage(Page::Parameters);
     pump(300);
     h.save(dir.getChildFile("parameters.png"));
+    h.ed->showPage(Page::Xray); // needs the module database in the app's cache
+    pump(300);
+    h.save(dir.getChildFile("xray.png"));
+    for (auto* name : { "delay1", "mix1", "Km_dlys", "plex" })
+        if (h.ed->getXray().selectModule(name))
+        {
+            pump(200);
+            h.save(dir.getChildFile("xray_selected.png"));
+            break;
+        }
+    h.ed->getXray().setMode(XrayView::Mode::Audio);
+    pump(200);
+    h.save(dir.getChildFile("xray_audio.png"));
+    h.ed->getXray().setMode(XrayView::Mode::Control);
+    pump(200);
+    h.save(dir.getChildFile("xray_control.png"));
+    h.ed->getXray().setMode(XrayView::Mode::AudioAndControl);
     h.ed->showPage(Page::Lcd);
     if (auto d = h7600::parseScreenDump(*screen); d && link.onScreen)
         link.onScreen(*d);

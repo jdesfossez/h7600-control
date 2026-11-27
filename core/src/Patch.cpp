@@ -407,6 +407,99 @@ const DbRecord* fieldRecord(const ModuleDb& db, const PatchModule& m, const Patc
     return dm && f.record < dm->records.size() ? &dm->records[f.record] : nullptr;
 }
 
+// ---- Graph -------------------------------------------------------------------------------
+
+int PatchGraph::nodeOf(int module) const
+{
+    for (std::size_t i = 0; i < nodes.size(); ++i)
+        if (nodes[i].module == module) return static_cast<int>(i);
+    return -1;
+}
+
+std::string moduleAbbrev(std::string_view type)
+{
+    static const std::map<std::string, std::string> known {
+        { "moddelay", "mdl" }, { "mix", "mix" }, { "ducker", "dck" }, { "stereomixer", "smx" },
+        { "knob", "knb" }, { "percentknob", "pct" }, { "textknob", "txk" }, { "sknob3", "skn" },
+        { "c_table", "tbl" }, { "c_multiply", "mul" }, { "midiclock", "clk" }, { "a_to_c", "a2c" },
+        { "hmonitor", "hmn" },
+    };
+    auto t = toLower(type);
+    if (auto it = known.find(t); it != known.end()) return it->second;
+    std::string out;
+    for (char c : t)
+        if (c != '_' && out.size() < 3) out += c;
+    return out;
+}
+
+PatchGraph buildGraph(const Patch& p)
+{
+    PatchGraph g;
+    const auto n = p.modules.size();
+    if (n == 0) return g;
+    const auto cs = p.connections();
+    std::vector<int> role(n, 0); // 0 hidden, 1 audio, 2 control
+    for (std::size_t i = 1; i < n; ++i)
+    {
+        auto& m = p.modules[i];
+        if (m.type == "TAIL") continue;
+        bool audio = false, control = false;
+        for (auto& o : m.outputs)
+        {
+            audio |= o.kind == PortKind::Audio;
+            control |= o.kind == PortKind::Control;
+        }
+        for (auto& f : m.fields)
+        {
+            audio |= f.dbType == "ED_SIGNAL";
+            control |= f.dbType == "ED_CONTROL";
+        }
+        role[i] = audio ? 1 : control ? 2 : 0;
+    }
+    // Signal depth over forward audio connections.
+    std::vector<int> depth(n, 0);
+    int maxDepth = 0;
+    for (std::size_t i = 1; i < n; ++i)
+    {
+        if (role[i] != 1) continue;
+        int d = 1;
+        for (auto& c : cs)
+            if (c.to == i && c.kind == PortKind::Audio && ! c.feedback && c.from < i && (c.from == 0 || role[c.from] == 1))
+                d = std::max(d, c.from == 0 ? 1 : depth[c.from] + 1);
+        depth[i] = d;
+        maxDepth = std::max(maxDepth, d);
+    }
+    g.columns = maxDepth + 2;
+    std::map<int, int> audioRows, controlRows;
+    g.nodes.push_back({ GraphNode::kIn, true, 0, 0 });
+    for (std::size_t i = 1; i < n; ++i)
+        if (role[i] == 1)
+            g.nodes.push_back({ static_cast<int>(i), true, depth[i], audioRows[depth[i]]++ });
+    g.nodes.push_back({ GraphNode::kOut, true, g.columns - 1, 0 });
+    for (std::size_t i = 1; i < n; ++i)
+    {
+        if (role[i] != 2) continue;
+        int col = 0;
+        for (auto& t : controlTargets(p, i))
+            if (role[t.module] == 1) { col = depth[t.module]; break; }
+            else if (t.module == 0) { col = g.columns - 1; }
+        g.nodes.push_back({ static_cast<int>(i), false, col, controlRows[col]++ });
+    }
+    const int inNode = 0, outNode = g.nodeOf(GraphNode::kOut);
+    for (auto& c : cs)
+    {
+        if (c.kind == PortKind::UserObject) continue;
+        // "adc-null", "adc-zero" and the like are the HEAD's "unpatched" outputs, not connections.
+        if (c.from == 0 && c.fromTag.rfind("in", 0) != 0) continue;
+        int from = c.from == 0 ? (c.kind == PortKind::Audio ? inNode : -1) : g.nodeOf(static_cast<int>(c.from));
+        int to = c.to == 0 ? (c.kind == PortKind::Audio ? outNode : -1) : g.nodeOf(static_cast<int>(c.to));
+        if (from < 0 || to < 0) continue;
+        const bool fb = c.from != 0 && c.to != 0 && c.feedback;
+        g.edges.push_back({ from, to, c.kind, fb, c.to == 0 ? 0 : c.field });
+    }
+    return g;
+}
+
 // ---- Parse / serialize --------------------------------------------------------------------
 
 std::optional<Patch> parsePatch(std::string_view text, const ModuleDb& db, std::string* error)

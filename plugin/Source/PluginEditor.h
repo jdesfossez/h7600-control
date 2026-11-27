@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "ui/BrowserView.h"
 #include "ui/ParamsView.h"
+#include "ui/XrayView.h"
 #include "ui/LcdMirror.h"
 #include "ui/Theme.h"
 
@@ -18,12 +19,13 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
-    enum class Page { Browse, Parameters, Lcd };
+    enum class Page { Browse, Parameters, Xray, Lcd };
     void showPage(Page);
 
     // For the snapshot tool.
     BrowserView& getBrowser() { return browser; }
     ParamsView& getParams() { return params; }
+    XrayView& getXray() { return xray; }
     juce::String getStatusText() const { return statusText; }
 
 private:
@@ -41,12 +43,13 @@ private:
     juce::ComboBox deviceBox;
     juce::Slider idSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft };
     juce::ComboBox channelBox;
-    juce::TextButton browseTab { "Browse" }, paramsTab { "Parameters" }, lcdTab { "LCD" };
+    juce::TextButton browseTab { "Browse" }, paramsTab { "Parameters" }, xrayTab { "X-ray" }, lcdTab { "LCD" };
     juce::String programName, statusText;
     juce::Rectangle<int> ledArea;
 
     BrowserView browser;
     ParamsView params;
+    XrayView xray;
     LcdMirror lcdMirror;
     int pendingLoad = -1;
 

@@ -26,7 +26,8 @@ set(H7600_PLUGIN_SOURCES
     Source/UserStore.cpp
     Source/ModuleDbStore.cpp
     Source/ui/BrowserView.cpp
-    Source/ui/ParamsView.cpp)
+    Source/ui/ParamsView.cpp
+    Source/ui/XrayView.cpp)
 
 target_sources(H7600Control PRIVATE ${H7600_PLUGIN_SOURCES})
 

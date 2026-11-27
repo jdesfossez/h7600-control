@@ -98,6 +98,37 @@ std::vector<std::size_t> knobsSteering(const Patch& p, std::size_t module);
 /// The database record behind a field (its DESCRIPTION, MINIMUM, MAXIMUM, DEFAULT), or nullptr.
 const DbRecord* fieldRecord(const ModuleDb& db, const PatchModule& m, const PatchField& f);
 
+/// The program as a graph for display. Audio modules sit in columns by signal depth (counting only
+/// connections from earlier lines, so feedback does not push them right); the unit's inputs are
+/// column 0 (node IN) and its outputs the last column (node OUT). Control modules take the column
+/// of the audio module their controls end up in. Menus and text (user-object only) are left out.
+struct GraphNode
+{
+    static constexpr int kIn = -1, kOut = -2;
+    int module = 0;     // index in Patch::modules, or kIn / kOut
+    bool audio = true;  // false: a control module
+    int column = 0;
+    int row = 0;        // order within its column (audio and control counted separately)
+};
+struct GraphEdge
+{
+    int from = 0, to = 0; // node indices
+    PortKind kind = PortKind::Audio;
+    bool feedback = false;
+    std::size_t field = 0; // input field of the target module (0 for OUT)
+};
+struct PatchGraph
+{
+    std::vector<GraphNode> nodes;
+    std::vector<GraphEdge> edges;
+    int columns = 2;
+    int nodeOf(int module) const;
+};
+PatchGraph buildGraph(const Patch& p);
+
+/// Three-letter label in the style of Eventide's patch editor ("mdl" for MODDELAY, "mix", ...).
+std::string moduleAbbrev(std::string_view type);
+
 /// Parses a quick sigfile (0B reply text). Fails if a type is unknown or the argument count does
 /// not match the database.
 std::optional<Patch> parsePatch(std::string_view text, const ModuleDb& db, std::string* error = nullptr);

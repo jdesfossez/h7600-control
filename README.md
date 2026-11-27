@@ -24,6 +24,11 @@ Everything it sends is run time only. It never saves, overwrites or uploads anyt
 * **Module database**: the unit's list of modules and their parameters, fetched once from your own
   H7600 (read-only, about 2 minutes, the unit answers nothing else meanwhile) or imported from a
   saved file, and cached on your computer. It is Eventide's data, so it is not included here.
+* **X-ray** (needs the module database): a picture of the loaded program on a sage LCD panel.
+  Audio modules sit in columns by signal depth from IN to OUT, control modules (knobs, control
+  math) in lanes under what they steer, feedback as dotted arcs; "aud only", "aud+ctrl" and
+  "ctrl only" views. Click a module to see its inputs and settings and a control for every knob
+  that steers it, directly or through control math (changes are sent live, run time only).
 * **LCD**: a mirror of the unit's 240 x 64 screen, refreshed after activity.
 * Follows program changes made on the front panel, and recovers when the unit is power-cycled or
   the MIDI interface is unplugged and plugged back in.

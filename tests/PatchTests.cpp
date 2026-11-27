@@ -341,3 +341,37 @@ TEST_CASE("Full database: knobs reach their targets through control math")
     for (auto k : steer) names.push_back(p->modules[k].name());
     CHECK(names == std::vector<std::string> { "dly_1", "dly1", "gliderate" });
 }
+
+TEST_CASE("Patch graph: columns by signal depth, IN and OUT, control lanes")
+{
+    auto p = testPatch();
+    // Chain g2 after g1 and feed g1 back from g2 to check depth and feedback.
+    p.modules[4].field("in")->token = "g1-out";
+    auto g = buildGraph(p);
+    CHECK(g.columns == 4); // IN, g1, g2, OUT
+    auto col = [&](const std::string& name) { return g.nodes[(std::size_t) g.nodeOf((int) *p.find(name))].column; };
+    CHECK(col("g1") == 1);
+    CHECK(col("g2") == 2);
+    CHECK(g.nodes[(std::size_t) g.nodeOf(GraphNode::kOut)].column == 3);
+    auto& lvl = g.nodes[(std::size_t) g.nodeOf((int) *p.find("lvl"))];
+    CHECK_FALSE(lvl.audio);
+    CHECK(lvl.column == 1); // under the first module it drives
+    CHECK(g.nodeOf((int) *p.find("page")) == -1); // menus are not drawn
+    int audio = 0, control = 0, fb = 0;
+    for (auto& e : g.edges)
+    {
+        audio += e.kind == PortKind::Audio;
+        control += e.kind == PortKind::Control;
+        fb += e.feedback;
+    }
+    CHECK(audio == 4);   // IN->g1, g1->g2, g1->OUT, g2->OUT
+    CHECK(control == 2);
+    CHECK(fb == 0);
+    p.modules[3].field("in")->token = "g2-out"; // now g1 <- g2 is feedback
+    g = buildGraph(p);
+    fb = 0;
+    for (auto& e : g.edges) fb += e.feedback;
+    CHECK(fb == 1);
+    CHECK(moduleAbbrev("MODDELAY") == "mdl");
+    CHECK(moduleAbbrev("C_ADDER") == "cad");
+}
