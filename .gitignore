@@ -7,3 +7,11 @@ cmake-build-*/
 .vscode/
 compile_commands.json
 build*.log
+
+# Eventide's module database and help text: not redistributed (fetch from your own unit with 0E)
+tests/fixtures/sigdbase_0c.syx
+*.sbs
+sigdbase*.txt
+sigdbase*.json
+*Vsigfile*
+tools/rack/rack.log

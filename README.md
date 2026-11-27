@@ -186,9 +186,25 @@ The reference is Eventide's Tech Note 34 (MIDI SysEx) and the H7600 Programming 
 | `07` setup want | `16` | nibblized |
 | `18` screen want | `17` | nibblized: width, height, size (32-bit big-endian each), 240 x 64 1-bpp bitmap, checksum |
 | `3C` parameter set | `2E` ack | ASCII `"<param id> <value> "`, e.g. `1e0001 50 ` |
+| `0E` sigfile database want | `0C` | plain ASCII (not nibblized), about 286 KB, arrives after about 122 s as one message; the unit answers nothing else meanwhile |
+| `0A` sigfile load (run time) | none on 5.22 | compiles and runs the sent sigfile as the current program, not saved; Tech Note 34 promises `00`/`0D` but 5.22 sends neither, so confirm with `0B` |
 
 * **Parameter id** = the 1-based index of the module in the quick sigfile as two lowercase hex
   digits, then `0001` (the meaning of `0001` is not known yet). Changes are run time only.
+* **`3C` acks are not proof.** The unit acks any subfield (`0001` to `0004` were all acked on a MIX
+  line and a KNOB line) even when it ignores it; only `0001` on a knob changed anything. Read `0B`
+  back to confirm a value.
+* **`3C` rate.** One `3C` is about 16 bytes, about 5 ms on the MIDI cable, so about 190 messages/s
+  is the cable limit. The unit kept up at that rate with no drops (800 messages, every one acked,
+  the final value always the last one sent). Waiting for each ack gives about 70/s (median ack
+  latency 10 ms).
+* **Module database (`0C`).** A sequence of module groups `{ ... }`, each holding field records
+  `{ KEY:VALUE ... }` (CR LF lines). A module opens with `TYPE:OPERATOR` (`OPERATOR_NAME`,
+  `OPERATOR_CLASS`) and closes with `TYPE:OPERATOREND`; repeating fields sit between `MULTIPLE` and
+  `MULTIPLEEND` (`ACTION_SPECIFIER:@count`), alternatives between `SWITCH`/`CASE`/`SWITCHEND`.
+  Firmware 5.22 lists 225 modules, 11 more than Eventide's `sigdbase.sbs` (audiomux, c_log,
+  c_power, compressor2, cyclecount, delay_xf, eqs, h3000osc, moddetun, overload, smonitor). It is
+  Eventide's data and is not in this repository; the app fetches it from your unit.
 * With SEQUENCE OUT = `new`, the unit sends `3C` messages when knobs are turned and `01` key-press
   messages (an active-low 32-bit key mask, as nibbles) for front-panel keys.
 * **Loading a program by number** (`makeProgramSelect`): SysEx bank change `03` (nibblized
