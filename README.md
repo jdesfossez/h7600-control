@@ -17,8 +17,13 @@ Everything it sends is run time only. It never saves, overwrites or uploads anyt
   and recently loaded presets. Enter, double-click or **Load** loads the preset on the unit, and
   the app reads it back to confirm.
 * **Parameters**: controls built from the loaded program itself (its own menu pages, ranges and
-  value formats). Moves are sent live, coalesced and acknowledged by the unit; knobs turned on the
-  front panel move the controls.
+  value formats). Moves are sent live (coalesced, up to about 140 per second); a moment after you
+  stop, the app reads the program back and tells you if the unit kept a different value, since its
+  acknowledgement alone does not prove a value was taken. Knobs turned on the front panel move the
+  controls. With the module database, each control also shows its range and what it drives.
+* **Module database**: the unit's list of modules and their parameters, fetched once from your own
+  H7600 (read-only, about 2 minutes, the unit answers nothing else meanwhile) or imported from a
+  saved file, and cached on your computer. It is Eventide's data, so it is not included here.
 * **LCD**: a mirror of the unit's 240 x 64 screen, refreshed after activity.
 * Follows program changes made on the front panel, and recovers when the unit is power-cycled or
   the MIDI interface is unplugged and plugged back in.
@@ -30,6 +35,14 @@ works the same in any host and as a standalone app.
 | Parameters | LCD mirror |
 |---|---|
 | ![Parameters](docs/screenshots/parameters.png) | ![LCD mirror](docs/screenshots/lcd.png) |
+
+### Not yet checked on the unit
+
+Written while the unit was offline (2026-11-27), tested only against captured messages:
+
+* fetching the module database from the app (progress, nothing else sent meanwhile);
+* parameter sends at up to about 140 per second with several waiting for acks, and the read-back
+  after a change (and its "kept a different value" message).
 
 ## Setting up the H7600
 

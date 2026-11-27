@@ -78,6 +78,26 @@ struct Patch
     std::vector<Connection> connections() const;
 };
 
+/// Where a control source (a knob, an LFO, ...) ends up: following control connections, through
+/// modules that only compute controls (C_MULTIPLY, C_TABLE, SKNOB3, ...), to the first module that
+/// does something else with it (an audio module's ED_CONTROL input, a monitor, ...).
+struct ControlTarget
+{
+    std::size_t module = 0;
+    std::size_t field = 0;           // the input field in `module`
+    std::vector<std::size_t> via;    // control modules in between, in order
+};
+std::vector<ControlTarget> controlTargets(const Patch& p, std::size_t source);
+
+/// True for modules that are knobs on the unit's menus (KNOB, PERCENTKNOB, TEXTKNOB, SKNOB3, ...).
+bool isKnobType(std::string_view type);
+
+/// The knob modules whose controls reach `module` (directly or through control math).
+std::vector<std::size_t> knobsSteering(const Patch& p, std::size_t module);
+
+/// The database record behind a field (its DESCRIPTION, MINIMUM, MAXIMUM, DEFAULT), or nullptr.
+const DbRecord* fieldRecord(const ModuleDb& db, const PatchModule& m, const PatchField& f);
+
 /// Parses a quick sigfile (0B reply text). Fails if a type is unknown or the argument count does
 /// not match the database.
 std::optional<Patch> parsePatch(std::string_view text, const ModuleDb& db, std::string* error = nullptr);

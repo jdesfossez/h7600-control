@@ -37,7 +37,10 @@ enum class Code : std::uint8_t
     SigfileWant = 0x09,     // -> SigfileDump (0x08), commented
     SigfileDumpRemote = 0x0A, // reply to SigfileWantQuick (also a write when sent to the unit)
     SigfileWantQuick = 0x0B,  // -> SigfileDumpRemote (0x0A), plain ASCII
+    SigdbaseDump = 0x0C,    // reply to SigdbaseWant: the module database, plain ASCII
     Error = 0x0D,
+    SigdbaseWant = 0x0E,    // -> SigdbaseDump (0x0C): about 286 KB in about 2 minutes on fw 5.22;
+                            // the unit answers nothing else until it has sent it
     ProgramDump = 0x15,
     SetupDump = 0x16,
     ScreenDump = 0x17,

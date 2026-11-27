@@ -186,3 +186,14 @@ TEST_CASE("Knob formats are applied safely")
     k.format = "huge: %999999999.0f";
     CHECK(k.displayValue() == "huge: 42.5");
 }
+
+TEST_CASE("knob mismatches: what the unit ignored")
+{
+    auto sf = load("sigfile_quick_0a_breathing_canyon.syx"); // trim -12, Km_dlys 75
+    auto none = knobMismatches(sf, { { "1e0001", "75" }, { "030001", "-12" } });
+    CHECK(none.empty());
+    auto m = knobMismatches(sf, { { "1e0001", "50" }, { "ff0001", "1" } });
+    REQUIRE(m.size() == 1);
+    CHECK(m[0].knob->name == "Km_dlys");
+    CHECK(m[0].sent == "50");
+}

@@ -21,7 +21,7 @@ TEST_CASE("coalesces drag values: only the latest queued value is sent")
     CHECK(s.queued() == 1);
     CHECK_FALSE(s.poll(10)); // still in flight
     CHECK(s.onFrame(ack(), 12));
-    auto next = s.poll(12);
+    auto next = s.poll(12); // the cap (7 ms) has passed
     REQUIRE(next);
     CHECK(text(*next) == "1e0001 53 ");
     CHECK(s.onFrame(ack(), 20));
@@ -35,14 +35,14 @@ TEST_CASE("different parameters keep their order")
     s.set("1e0001", "50");
     auto a = s.poll(0);
     s.onFrame(ack(), 5);
-    auto b = s.poll(5);
+    auto b = s.poll(7);
     REQUIRE(a);
     REQUIRE(b);
     CHECK(text(*a) == "030001 -12 ");
     CHECK(text(*b) == "1e0001 50 ");
 }
 
-TEST_CASE("an ack frees the line for the next parameter at once")
+TEST_CASE("a second parameter does not wait for the first one's ack")
 {
     ParamSender::Options o;
     o.minIntervalMs = 25;
@@ -50,8 +50,8 @@ TEST_CASE("an ack frees the line for the next parameter at once")
     s.set("1e0001", "50");
     s.set("030001", "-12");
     REQUIRE(s.poll(0));
-    s.onFrame(ack(), 1);
-    CHECK(s.poll(1)); // ack frees the line at once
+    CHECK_FALSE(s.poll(24)); // rate cap
+    CHECK(s.poll(25));       // no ack needed
 }
 
 TEST_CASE("timeout retries, then reports failure")
@@ -90,4 +90,36 @@ TEST_CASE("unrelated frames are not acks")
     s.set("1e0001", "50");
     s.poll(0);
     CHECK_FALSE(s.onFrame({ 1, static_cast<std::uint8_t>(Code::Keypress), {} }, 1));
+}
+
+TEST_CASE("different parameters are pipelined at the rate cap")
+{
+    ParamSender s(1); // defaults: 7 ms apart, 4 waiting for acks
+    for (int i = 1; i <= 6; ++i)
+        s.set(paramIdForModule(i), "1");
+    CHECK(s.poll(0));
+    CHECK_FALSE(s.poll(3)); // rate cap
+    CHECK(s.poll(7));
+    CHECK(s.poll(14));
+    CHECK(s.poll(21));
+    CHECK(s.waiting() == 4);
+    CHECK_FALSE(s.poll(28)); // window full
+    CHECK(s.onFrame(ack(), 29));
+    CHECK(s.poll(29));
+    CHECK(s.queued() == 1);
+}
+
+TEST_CASE("140 changes a second get through without acks blocking them")
+{
+    ParamSender s(1);
+    int sent = 0;
+    std::int64_t t = 0;
+    for (; t < 1000; ++t)
+    {
+        s.set(paramIdForModule(1 + (int) (t % 8)), std::to_string(t));
+        if (s.poll(t)) ++sent;
+        if (t % 7 == 3) s.onFrame(ack(), t); // the unit acks within a few ms
+    }
+    CHECK(sent >= 135);
+    CHECK(sent <= 143);
 }

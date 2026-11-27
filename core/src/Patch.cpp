@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <tuple>
 
 namespace h7600
 {
@@ -331,6 +332,79 @@ std::vector<Connection> Patch::connections() const
         }
     }
     return out;
+}
+
+// ---- Control flow -----------------------------------------------------------------------
+
+bool isKnobType(std::string_view type)
+{
+    return toUpper(type).find("KNOB") != std::string::npos;
+}
+
+std::vector<ControlTarget> controlTargets(const Patch& p, std::size_t source)
+{
+    std::vector<ControlTarget> out;
+    if (source >= p.modules.size()) return out;
+    const auto cs = p.connections();
+    auto passesOn = [&](std::size_t m)
+    {
+        const auto& outs = p.modules[m].outputs;
+        bool control = false, audio = false;
+        for (auto& o : outs)
+        {
+            control |= o.kind == PortKind::Control;
+            audio |= o.kind == PortKind::Audio;
+        }
+        return control && ! audio && m != 0;
+    };
+    struct Step { std::size_t module; std::vector<std::size_t> via; };
+    std::vector<Step> todo { { source, {} } };
+    std::set<std::size_t> seen { source };
+    std::set<std::pair<std::size_t, std::size_t>> recorded;
+    while (! todo.empty())
+    {
+        auto cur = todo.back();
+        todo.pop_back();
+        for (auto& c : cs)
+        {
+            if (c.from != cur.module || c.kind != PortKind::Control || c.to == cur.module) continue;
+            if (passesOn(c.to))
+            {
+                if (seen.insert(c.to).second)
+                {
+                    auto via = cur.via;
+                    via.push_back(c.to);
+                    todo.push_back({ c.to, std::move(via) });
+                }
+            }
+            else if (recorded.insert({ c.to, c.field }).second)
+                out.push_back({ c.to, c.field, cur.via });
+        }
+    }
+    std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return std::tie(a.module, a.field) < std::tie(b.module, b.field); });
+    return out;
+}
+
+std::vector<std::size_t> knobsSteering(const Patch& p, std::size_t module)
+{
+    std::vector<std::size_t> out;
+    for (std::size_t k = 0; k < p.modules.size(); ++k)
+    {
+        if (! isKnobType(p.modules[k].type)) continue;
+        for (auto& t : controlTargets(p, k))
+            if (t.module == module || std::find(t.via.begin(), t.via.end(), module) != t.via.end())
+            {
+                out.push_back(k);
+                break;
+            }
+    }
+    return out;
+}
+
+const DbRecord* fieldRecord(const ModuleDb& db, const PatchModule& m, const PatchField& f)
+{
+    auto* dm = db.find(m.type);
+    return dm && f.record < dm->records.size() ? &dm->records[f.record] : nullptr;
 }
 
 // ---- Parse / serialize --------------------------------------------------------------------

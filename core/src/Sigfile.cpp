@@ -293,6 +293,23 @@ std::vector<MenuPage> Sigfile::pages() const
     return out;
 }
 
+std::vector<KnobMismatch> knobMismatches(const Sigfile& sf, const std::vector<std::pair<std::string, std::string>>& sent)
+{
+    std::vector<KnobMismatch> out;
+    for (auto& [id, value] : sent)
+    {
+        const Knob* k = nullptr;
+        for (auto& kn : sf.knobs)
+            if (kn.paramId() == id) k = &kn;
+        if (! k) continue; // not a knob of this program (program changed meanwhile)
+        const double want = quantize(*k, std::strtod(value.c_str(), nullptr));
+        const double tol = k->step > 0 ? k->step / 2 : 1e-6;
+        if (std::fabs(quantize(*k, k->value) - want) > tol)
+            out.push_back({ k, value });
+    }
+    return out;
+}
+
 double quantize(const Knob& k, double v)
 {
     double lo = std::min(k.min, k.max), hi = std::max(k.min, k.max);
@@ -319,6 +336,7 @@ std::optional<Sigfile> parseSigfile(std::string_view text)
 {
     auto toks = tokenize(text);
     Sigfile sf;
+    sf.text = std::string(text);
     for (auto& t : toks)
     {
         if (t.lineStart && isOperatorWord(t))

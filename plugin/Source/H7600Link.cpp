@@ -9,7 +9,7 @@ H7600Link::H7600Link()
 {
     sender.onFailed = [this](const std::string& id, const std::string& v)
     { status("The unit did not acknowledge " + juce::String(id) + " = " + juce::String(v)); };
-    startTimer(10);
+    startTimer(4); // the parameter sender may send every 7 ms
 }
 
 H7600Link::~H7600Link()
@@ -66,6 +66,9 @@ bool H7600Link::open(const juce::String& name)
 
 void H7600Link::close()
 {
+    dbFetching = false;
+    sentValues.clear();
+    verifyAt = 0;
     if (input) input->stop();
     input.reset();
     output.reset();
@@ -92,6 +95,9 @@ void H7600Link::scheduleRefresh(int delayMs) { refreshAt = nowMs() + delayMs; }
 void H7600Link::loadProgram(int number)
 {
     if (! isOpen()) { status("Not connected"); return; }
+    if (dbFetching) { status("Wait until the module database has arrived"); return; }
+    sentValues.clear();
+    verifyAt = 0;
     for (auto& m : h7600::makeProgramSelect(deviceId, midiChannel, number))
         send(m);
     status("Loading " + juce::String(number) + "...");
@@ -101,17 +107,15 @@ void H7600Link::loadProgram(int number)
 void H7600Link::requestSigfile()
 {
     if (! isOpen()) { status("Not connected"); return; }
-    if (sigfilePending) return;
+    if (sigfilePending || dbFetching) return;
     sigfilePending = true;
+    verifyGeneration = setGeneration;
     tracker.expect(h7600::Code::SigfileWantQuick, nowMs(), 8000,
         [this](const h7600::Frame& f)
         {
             sigfilePending = false;
             if (auto sf = h7600::parseSigfile(h7600::payloadText(f)))
-            {
-                lastSigfileEntries = (int) sf->entries.size();
-                if (onSigfile) onSigfile(*sf);
-            }
+                deliverSigfile(*sf);
             else
                 status("Could not read the program description from the unit");
         },
@@ -125,9 +129,64 @@ void H7600Link::requestSigfile()
     send(h7600::makeWant(deviceId, h7600::Code::SigfileWantQuick));
 }
 
+void H7600Link::deliverSigfile(const h7600::Sigfile& sf)
+{
+    lastSigfileEntries = (int) sf.entries.size();
+    if (verifyGeneration != setGeneration)
+    {
+        // The user moved a control while this was on its way: its values are stale.
+        verifyAt = nowMs() + 600;
+        return;
+    }
+    if (! sentValues.empty())
+    {
+        auto bad = h7600::knobMismatches(sf, sentValues);
+        sentValues.clear();
+        if (! bad.empty())
+        {
+            auto& k = *bad.front().knob;
+            status("The unit acknowledged but kept " + juce::String(k.label().empty() ? k.name : k.label()) + " at "
+                   + juce::String(k.displayValue()) + " (sent " + juce::String(bad.front().sent) + ")"
+                   + (bad.size() > 1 ? " and " + juce::String((int) bad.size() - 1) + " more" : juce::String()));
+        }
+    }
+    if (onSigfile) onSigfile(sf);
+}
+
+bool H7600Link::fetchModuleDatabase()
+{
+    if (! isOpen()) { status("Not connected"); return false; }
+    if (dbFetching) return false;
+    if (! sender.idle() || sigfilePending || screenPending)
+    {
+        status("The unit is busy; try again in a moment");
+        return false;
+    }
+    dbFetching = true;
+    dbBytes = 0;
+    dbLastProgress = nowMs();
+    tracker.expect(h7600::Code::SigdbaseWant, nowMs(), 5 * 60 * 1000,
+        [this](const h7600::Frame& f)
+        {
+            dbFetching = false;
+            if (onDatabaseProgress) onDatabaseProgress(1.0);
+            if (onDatabase) onDatabase(h7600::payloadText(f));
+            scheduleRefresh(300);
+        },
+        [this](h7600::Code)
+        {
+            dbFetching = false;
+            status("The module database did not arrive within 5 minutes");
+            if (onDatabaseProgress) onDatabaseProgress(-1.0);
+        });
+    send(h7600::makeWant(deviceId, h7600::Code::SigdbaseWant));
+    status("Asked the H7600 for its module database (about 2 minutes; it answers nothing else meanwhile)");
+    return true;
+}
+
 bool H7600Link::requestScreen()
 {
-    if (! isOpen() || screenPending || sigfilePending || ! sender.idle())
+    if (! isOpen() || screenPending || sigfilePending || dbFetching || ! sender.idle())
         return false;
     screenPending = true;
     tracker.expect(h7600::Code::ScreenWant, nowMs(), 5000,
@@ -145,7 +204,31 @@ bool H7600Link::requestScreen()
 void H7600Link::setParameter(const h7600::Knob& knob, double value)
 {
     if (! isOpen()) return;
-    sender.set(knob.paramId(), h7600::valueText(knob, value));
+    if (dbFetching) { status("Wait until the module database has arrived"); return; }
+    const auto id = knob.paramId();
+    const auto text = h7600::valueText(knob, value);
+    sender.set(id, text);
+    auto it = std::find_if(sentValues.begin(), sentValues.end(), [&](auto& p) { return p.first == id; });
+    if (it != sentValues.end()) it->second = text;
+    else sentValues.emplace_back(id, text);
+    ++setGeneration;
+    verifyAt = nowMs() + 800; // read back once the user has stopped for a moment
+}
+
+void H7600Link::handlePartialSysexMessage(juce::MidiInput*, const juce::uint8*, int n, double)
+{
+    juce::WeakReference<H7600Link> weak(this);
+    juce::MessageManager::callAsync([weak, n]
+    {
+        auto* self = weak.get();
+        if (! self || ! self->dbFetching) return;
+        self->dbBytes += n;
+        if (nowMs() - self->dbLastProgress < 500) return;
+        self->dbLastProgress = nowMs();
+        const double frac = juce::jlimit(0.0, 0.99, (double) self->dbBytes / 286448.0); // size on fw 5.22
+        if (self->onDatabaseProgress) self->onDatabaseProgress(frac);
+        self->status("Receiving the module database: " + juce::String(juce::roundToInt(frac * 100)) + " %");
+    });
 }
 
 void H7600Link::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& m)
@@ -224,10 +307,18 @@ void H7600Link::timerCallback()
     if (isOpen())
         if (auto m = sender.poll(now))
             send(*m);
-    if (refreshAt != 0 && now >= refreshAt && sender.idle())
+    if (! dbFetching) // the unit is deaf until the database has arrived
     {
-        refreshAt = 0;
-        requestSigfile();
+        if (refreshAt != 0 && now >= refreshAt && sender.idle())
+        {
+            refreshAt = 0;
+            requestSigfile();
+        }
+        if (verifyAt != 0 && now >= verifyAt && sender.idle() && ! sigfilePending)
+        {
+            verifyAt = 0;
+            requestSigfile();
+        }
     }
     if (now >= nextWatchdog)
     {

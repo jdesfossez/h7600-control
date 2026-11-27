@@ -305,3 +305,39 @@ TEST_CASE("Full database: every module can be created and parsed back")
         CHECK(serialize(*back) == serialize(p));
     }
 }
+
+TEST_CASE("Patch: control targets and the knobs that steer a module")
+{
+    auto p = testPatch();
+    auto t = controlTargets(p, 2); // lvl
+    REQUIRE(t.size() == 2);
+    CHECK(p.modules[t[0].module].name() == "g1");
+    CHECK(p.modules[t[0].module].fields[t[0].field].name == "level");
+    CHECK(t[0].via.empty());
+    CHECK(knobsSteering(p, 3) == std::vector<std::size_t> { 2 });
+    CHECK(knobsSteering(p, 1).empty());
+    auto* rec = fieldRecord(testDb(), p.modules[3], p.modules[3].fields[t[0].field]);
+    REQUIRE(rec);
+    CHECK(rec->get("DESCRIPTION") == "level dB");
+}
+
+TEST_CASE("Full database: knobs reach their targets through control math")
+{
+    auto text = fullDatabaseText();
+    if (! text) SKIP("module database not available (set H7600_SIGDBASE)");
+    auto f = std::filesystem::path(H7600_FIXTURES_DIR) / "sigfile_quick_0a_ducked_delays.syx";
+    if (! std::filesystem::exists(f)) SKIP("Ducked Delays capture not available");
+    auto db = ModuleDb::parse(*text);
+    REQUIRE(db);
+    auto p = parsePatch(*sigfileText(f), *db);
+    REQUIRE(p);
+    // TEXTKNOB dly_1 -> C_TABLE table1 -> C_MULTIPLY math1 -> SKNOB3 dly1 (merge in) -> MODDELAY delay1
+    auto t = controlTargets(*p, *p->find("dly_1"));
+    REQUIRE(t.size() == 1);
+    CHECK(p->modules[t[0].module].name() == "delay1");
+    CHECK(t[0].via.size() == 3);
+    auto steer = knobsSteering(*p, *p->find("delay1"));
+    std::vector<std::string> names;
+    for (auto k : steer) names.push_back(p->modules[k].name());
+    CHECK(names == std::vector<std::string> { "dly_1", "dly1", "gliderate" });
+}

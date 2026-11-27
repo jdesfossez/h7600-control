@@ -24,6 +24,7 @@ set(H7600_PLUGIN_SOURCES
     Source/PluginEditor.cpp
     Source/H7600Link.cpp
     Source/UserStore.cpp
+    Source/ModuleDbStore.cpp
     Source/ui/BrowserView.cpp
     Source/ui/ParamsView.cpp)
 

@@ -48,8 +48,16 @@ public:
     /// queued (a dump takes ~1.3 s of MIDI bandwidth). Returns false if skipped.
     bool requestScreen();
 
-    /// Run-time parameter change (not saved on the unit). Coalesced.
+    /// Run-time parameter change (not saved on the unit). Coalesced and rate-capped. A moment
+    /// after the last change the program is read back (0B) to confirm, since the unit's ack
+    /// does not prove a value was taken.
     void setParameter(const h7600::Knob& knob, double value);
+
+    /// Read-only: asks for the module database (0E -> 0C). About 2 minutes on fw 5.22, during
+    /// which the unit answers nothing else, so every other request waits. Progress and the
+    /// result come through onStatus / onDatabaseProgress / onDatabase.
+    bool fetchModuleDatabase();
+    bool isFetchingDatabase() const { return dbFetching; }
 
     static juce::StringArray availableDevices();
 
@@ -58,12 +66,16 @@ public:
     std::function<void(const h7600::ParamChange&)> onParamChange;
     std::function<void()> onConnectionChanged;
     std::function<void(const h7600::ScreenDump&)> onScreen;
+    std::function<void(const std::string& text)> onDatabase;
+    std::function<void(double fraction)> onDatabaseProgress; // 0..1, estimated from bytes received
     /// Something happened that can change the unit's screen: a front-panel
     /// key or knob, one of our parameter changes acknowledged, a program read.
     std::function<void()> onScreenMayChange;
 
 private:
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage&) override;
+    void handlePartialSysexMessage(juce::MidiInput*, const juce::uint8*, int, double) override;
+    void deliverSigfile(const h7600::Sigfile&);
     void timerCallback() override;
     void handleFrame(const h7600::Frame&);
     void send(const h7600::Bytes&);
@@ -85,6 +97,13 @@ private:
     std::int64_t refreshAt = 0;
     std::int64_t nextWatchdog = 0;
     int lastSigfileEntries = 0;
+    // Read-back after parameter changes.
+    std::vector<std::pair<std::string, std::string>> sentValues; // latest per param id
+    std::int64_t verifyAt = 0;
+    int setGeneration = 0, verifyGeneration = -1;
+    // Module database download.
+    bool dbFetching = false;
+    std::int64_t dbBytes = 0, dbLastProgress = 0;
     juce::WeakReference<H7600Link>::Master masterReference;
     friend class juce::WeakReference<H7600Link>;
 

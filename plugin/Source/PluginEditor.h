@@ -31,6 +31,9 @@ private:
     void setStatus(const juce::String&);
     void showSigfile(const h7600::Sigfile&);
     void connectionChanged();
+    void databaseMenu();
+    void databaseChanged();
+    std::unique_ptr<juce::FileChooser> chooser;
 
     H7600ControlProcessor& owner;
     theme::LookAndFeel lnf;

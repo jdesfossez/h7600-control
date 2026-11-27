@@ -48,6 +48,22 @@ H7600ControlEditor::H7600ControlEditor(H7600ControlProcessor& p)
 
     params.onChange = [this](const h7600::Knob& k, double v) { owner.getLink().setParameter(k, v); };
     params.onRefresh = [this] { owner.getLink().requestSigfile(); };
+    params.onDatabaseMenu = [this] { databaseMenu(); };
+    link.onDatabase = [this](const std::string& text)
+    {
+        juce::String err;
+        if (owner.getModuleDb().setFromText(text, &err))
+            setStatus("Module database received and saved on this Mac (" + owner.getModuleDb().describe() + ")");
+        else
+            setStatus(err);
+        databaseChanged();
+    };
+    link.onDatabaseProgress = [this](double f)
+    {
+        params.setDatabaseStatus(f < 0 ? owner.getModuleDb().describe()
+                                       : "Receiving module database " + juce::String(juce::roundToInt(f * 100)) + " %");
+    };
+    databaseChanged();
     addChildComponent(params);
 
     link.onStatus = [this](const juce::String& s) { setStatus(s); };
@@ -83,6 +99,8 @@ H7600ControlEditor::~H7600ControlEditor()
     link.onConnectionChanged = nullptr;
     link.onScreen = nullptr;
     link.onScreenMayChange = nullptr;
+    link.onDatabase = nullptr;
+    link.onDatabaseProgress = nullptr;
     setLookAndFeel(nullptr);
 }
 
@@ -121,6 +139,49 @@ void H7600ControlEditor::connectionChanged()
     params.setConnected(link.isOpen(), link.isResponding());
     refreshDevices();
     repaint();
+}
+
+void H7600ControlEditor::databaseChanged()
+{
+    params.setModuleDb(owner.getModuleDb().get());
+    params.setDatabaseStatus(owner.getModuleDb().describe());
+}
+
+void H7600ControlEditor::databaseMenu()
+{
+    juce::PopupMenu m;
+    m.addSectionHeader(owner.getModuleDb().describe());
+    const bool canFetch = owner.getLink().isOpen() && ! owner.getLink().isFetchingDatabase();
+    m.addItem(1, "Fetch from the unit (about 2 minutes)...", canFetch);
+    m.addItem(2, "Import a database file (.txt or .syx)...");
+    m.addItem(3, "Show the cached file", ModuleDbStore::cacheFile().existsAsFile());
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&params), [this](int r)
+    {
+        if (r == 1)
+        {
+            juce::AlertWindow::showOkCancelBox(juce::MessageBoxIconType::QuestionIcon, "Fetch the module database",
+                "The H7600 sends the list of its modules and their parameters (about 286 KB). It takes about "
+                "2 minutes, and the unit answers nothing else until it is done. This only reads from the unit; "
+                "nothing on it changes.", "Fetch", "Cancel", nullptr,
+                juce::ModalCallbackFunction::create([this](int ok) { if (ok) owner.getLink().fetchModuleDatabase(); }));
+        }
+        else if (r == 2)
+        {
+            chooser = std::make_unique<juce::FileChooser>("Import a module database", juce::File(), "*.txt;*.syx");
+            chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [this](const juce::FileChooser& fc)
+                {
+                    auto f = fc.getResult();
+                    if (f == juce::File()) return;
+                    juce::String err;
+                    if (owner.getModuleDb().importFile(f, &err)) setStatus("Imported " + owner.getModuleDb().describe());
+                    else setStatus(err);
+                    databaseChanged();
+                });
+        }
+        else if (r == 3)
+            ModuleDbStore::cacheFile().revealToUser();
+    });
 }
 
 void H7600ControlEditor::showSigfile(const h7600::Sigfile& sf)

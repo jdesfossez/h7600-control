@@ -47,6 +47,7 @@ struct MenuPage
 
 struct Sigfile
 {
+    std::string text;                // the sigfile text this was parsed from
     std::string programName;
     std::string author;              // TAIL argument
     std::vector<SigEntry> entries;
@@ -60,6 +61,15 @@ struct Sigfile
     /// collected in a final "other" page.
     std::vector<MenuPage> pages() const;
 };
+
+/// Knobs whose value in `sf` differs from what was sent (paramId -> value text), e.g. because the
+/// unit ignored a message it acknowledged. Values are compared after quantizing to the knob's step.
+struct KnobMismatch
+{
+    const Knob* knob = nullptr;
+    std::string sent;
+};
+std::vector<KnobMismatch> knobMismatches(const Sigfile& sf, const std::vector<std::pair<std::string, std::string>>& sent);
 
 /// Snaps a value to the knob's step and range.
 double quantize(const Knob& k, double v);

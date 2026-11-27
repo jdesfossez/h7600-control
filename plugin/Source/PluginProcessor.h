@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "H7600Link.h"
+#include "ModuleDbStore.h"
 #include "UserStore.h"
 #include "h7600/PresetCatalog.h"
 
@@ -40,6 +41,7 @@ public:
     H7600Link& getLink() { return link; }
     const h7600::Catalog& getCatalog() const { return catalog; }
     UserStore& getUserStore() { return userStore; }
+    ModuleDbStore& getModuleDb() { return moduleDb; }
     /// Opens the MIDI interface with this name (and keeps retrying if it goes away).
     void connect(const juce::String& deviceName);
     /// Whether a new editor connects to a MIDI interface by itself (UM-ONE first,
@@ -52,6 +54,7 @@ private:
     H7600Link link;
     h7600::Catalog catalog;
     UserStore userStore;
+    ModuleDbStore moduleDb;
     bool autoConnect = true;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(H7600ControlProcessor)
 };

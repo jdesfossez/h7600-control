@@ -6,6 +6,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "h7600/ModuleDb.h"
+#include "h7600/Patch.h"
 #include "h7600/Protocol.h"
 #include "h7600/Sigfile.h"
 #include "Theme.h"
@@ -13,7 +15,7 @@
 class ParamControl : public juce::Component
 {
 public:
-    explicit ParamControl(const h7600::Knob& k);
+    ParamControl(const h7600::Knob& k, juce::String info);
 
     std::function<void(double)> onChange;
     const h7600::Knob& knob() const { return model; }
@@ -26,6 +28,7 @@ public:
 private:
     void changed(double v);
     h7600::Knob model;
+    juce::String info; // range, and what the knob drives (from the module database)
     juce::Slider slider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::ComboBox choice;
 };
@@ -37,6 +40,12 @@ public:
 
     std::function<void(const h7600::Knob&, double)> onChange;
     std::function<void()> onRefresh;
+    /// "Module database" menu: fetch from the unit, import a file.
+    std::function<void()> onDatabaseMenu;
+
+    /// The module database, if any (nullptr): adds range and target info to each control.
+    void setModuleDb(const h7600::ModuleDb* db);
+    void setDatabaseStatus(const juce::String& s) { dbStatus = s; repaint(); }
 
     void showSigfile(const h7600::Sigfile&);
     void applyFromUnit(const h7600::ParamChange&);
@@ -51,6 +60,8 @@ public:
 
 private:
     void showPage(int index);
+    juce::String infoFor(const h7600::Knob& k) const;
+    void rebuildPatch();
 
     h7600::Sigfile sigfile;
     std::vector<h7600::MenuPage> pages;
@@ -60,6 +71,10 @@ private:
     juce::Component grid;
     juce::Viewport gridView;
     juce::TextButton refresh { "Read from unit" };
+    juce::TextButton dbButton { "Module database" };
+    const h7600::ModuleDb* db = nullptr;
+    std::optional<h7600::Patch> patch;
+    juce::String dbStatus;
     juce::String note = "Connect the H7600 to see the loaded program's parameters.";
     juce::Rectangle<int> card;
 };

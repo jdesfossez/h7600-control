@@ -81,6 +81,7 @@ Bytes makeWant(std::uint8_t deviceId, Code want)
         case Code::SigfileWantQuick:
         case Code::ScreenWant:
         case Code::InfoWant:
+        case Code::SigdbaseWant:
             return buildFrame(deviceId, want);
         default:
             throw std::invalid_argument("not a read-only want code");
@@ -97,6 +98,7 @@ std::optional<Code> replyCodeFor(Code request)
         case Code::SigfileWantQuick: return Code::SigfileDumpRemote;
         case Code::ScreenWant: return Code::ScreenDump;
         case Code::InfoWant: return Code::InfoDump;
+        case Code::SigdbaseWant: return Code::SigdbaseDump;
         case Code::ParamSet: return Code::ParamAck;
         default: return std::nullopt;
     }

@@ -1,7 +1,19 @@
 #include "h7600/ParamSender.h"
 
+#include <algorithm>
+
 namespace h7600
 {
+bool ParamSender::inFlightHas(const std::string& id) const
+{
+    return std::any_of(inFlight.begin(), inFlight.end(), [&](auto& i) { return i.id == id; });
+}
+
+bool ParamSender::queuedHas(const std::string& id) const
+{
+    return std::any_of(queue.begin(), queue.end(), [&](auto& i) { return i.id == id; });
+}
+
 void ParamSender::set(const std::string& id, const std::string& value)
 {
     for (auto& q : queue)
@@ -11,46 +23,47 @@ void ParamSender::set(const std::string& id, const std::string& value)
             q.attempts = 0;
             return;
         }
-    queue.push_back({ id, value, 0 });
+    queue.push_back({ id, value, 0, 0 });
 }
 
-bool ParamSender::onFrame(const Frame& f, std::int64_t nowMs)
+bool ParamSender::onFrame(const Frame& f, std::int64_t)
 {
-    if (! inFlight || f.code != static_cast<std::uint8_t>(Code::ParamAck))
+    if (inFlight.empty() || f.code != static_cast<std::uint8_t>(Code::ParamAck))
         return false;
-    inFlight.reset();
-    lastSend = nowMs - opt.minIntervalMs; // the ack frees the line immediately
+    inFlight.pop_front(); // the rate cap still applies: acks do not speed up sending
     return true;
 }
 
 std::optional<Bytes> ParamSender::poll(std::int64_t nowMs)
 {
-    if (inFlight)
+    // Timeouts, oldest first. A timed-out message is retried unless a newer value replaced it.
+    while (! inFlight.empty() && nowMs - inFlight.front().sentAt >= opt.ackTimeoutMs)
     {
-        if (nowMs - sentAt < opt.ackTimeoutMs)
-            return std::nullopt;
-        // Timed out. Retry unless a newer value for the same id is queued.
-        bool superseded = false;
-        for (auto& q : queue)
-            if (q.id == inFlight->id) superseded = true;
-        if (! superseded && inFlight->attempts <= opt.maxRetries)
-            queue.push_front(*inFlight);
-        else if (! superseded && onFailed)
-            onFailed(inFlight->id, inFlight->value);
-        inFlight.reset();
+        Item it = inFlight.front();
+        inFlight.pop_front();
+        if (queuedHas(it.id))
+            continue;
+        if (it.attempts <= opt.maxRetries)
+            queue.push_front(it);
+        else if (onFailed)
+            onFailed(it.id, it.value);
     }
-    if (queue.empty() || nowMs - lastSend < opt.minIntervalMs)
+    if (inFlight.size() >= opt.maxInFlight || nowMs - lastSend < opt.minIntervalMs)
         return std::nullopt;
-    Item it = queue.front();
-    queue.pop_front();
+    // The first queued parameter that is not already waiting for an ack.
+    auto next = std::find_if(queue.begin(), queue.end(), [&](auto& q) { return ! inFlightHas(q.id); });
+    if (next == queue.end())
+        return std::nullopt;
+    Item it = *next;
+    queue.erase(next);
     if (it.attempts > opt.maxRetries)
     {
         if (onFailed) onFailed(it.id, it.value);
         return std::nullopt;
     }
     ++it.attempts;
-    inFlight = it;
-    sentAt = lastSend = nowMs;
+    it.sentAt = lastSend = nowMs;
+    inFlight.push_back(it);
     return makeParamSet(device, it.id, it.value);
 }
 } // namespace h7600
