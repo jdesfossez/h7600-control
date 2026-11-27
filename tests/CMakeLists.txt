@@ -4,7 +4,8 @@ add_executable(h7600_tests
     ScreenDumpTests.cpp
     RequestTrackerTests.cpp
     PresetsCatalogTests.cpp
-    ParamSenderTests.cpp)
+    ParamSenderTests.cpp
+    PatchTests.cpp)
 target_link_libraries(h7600_tests PRIVATE h7600_core Catch2::Catch2WithMain)
 target_compile_definitions(h7600_tests PRIVATE
     H7600_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
